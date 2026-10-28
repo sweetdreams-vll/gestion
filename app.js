@@ -15,16 +15,17 @@ import {
   doc, getDoc, getDocs, setDoc, updateDoc, collection, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { moduloCaja } from "./caja.js?v=4";
+import { moduloStock } from "./stock.js?v=1";
 import { moduloCompras } from "./compras.js?v=4";
 import { moduloCajaRoja } from "./cajaroja.js?v=4";
 
 // ---------- Módulos ----------
 // Para añadir un módulo nuevo: importarlo arriba y añadirlo a esta lista.
 // enBarra: true = aparece en la barra inferior; false = aparece en «Más».
-const MODULOS = [moduloCaja, moduloCompras, moduloCajaRoja];
+const MODULOS = [moduloCaja, moduloCompras, moduloStock, moduloCajaRoja];
 
 const PROXIMAMENTE = [
-  "Stock", "Carta y escandallos", "Personal",
+  "Carta y escandallos", "Personal",
   "Cierre trimestral", "Panel de control", "Obligaciones del local"
 ];
 
