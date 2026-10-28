@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gestión Sweet Dreams</title>
+<style>
+  body { font-family: system-ui, -apple-system, Roboto, sans-serif; background: #1a1023; color: #f5f0fa; margin: 0; padding: 24px; display: flex; justify-content: center; }
+  .caja { width: 100%; max-width: 420px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; color: #c9b8dc; }
+  label { display: block; margin: 14px 0 6px; font-size: .95rem; }
+  input { width: 100%; box-sizing: border-box; padding: 14px; font-size: 1rem; border-radius: 10px; border: 1px solid #4a3560; background: #2a1b38; color: #fff; }
+  button { width: 100%; padding: 14px; font-size: 1rem; border: none; border-radius: 10px; margin-top: 18px; background: #e0539a; color: #fff; font-weight: 600; }
+  button.sec { background: #3b2a4d; }
+  #mensaje { margin-top: 18px; padding: 12px; border-radius: 10px; display: none; line-height: 1.4; }
+  #mensaje.ok { background: #1f4d33; display: block; }
+  #mensaje.error { background: #5c1f2a; display: block; }
+  .oculto { display: none; }
+</style>
+</head>
+<body>
+<div class="caja">
+  <h1>Sweet Dreams</h1>
+  <p class="sub">Gestión interna · prueba de conexión</p>
+
+  <div id="pantallaLogin">
+    <label for="email">Correo</label>
+    <input id="email" type="email" autocomplete="username">
+    <label for="clave">Contraseña</label>
+    <input id="clave" type="password" autocomplete="current-password">
+    <button id="btnEntrar">Entrar</button>
+  </div>
+
+  <div id="pantallaDentro" class="oculto">
+    <p>Has entrado como <strong id="quien"></strong></p>
+    <button id="btnProbar">Probar la base de datos</button>
+    <button id="btnSalir" class="sec">Cerrar sesión</button>
+  </div>
+
+  <div id="mensaje"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDnNDk2BwqW7h_gB3mbsHl4VZKSM5LN_iA",
+  authDomain: "sweet-dreams-gestion.firebaseapp.com",
+  projectId: "sweet-dreams-gestion",
+  storageBucket: "sweet-dreams-gestion.firebasestorage.app",
+  messagingSenderId: "870404185505",
+  appId: "1:870404185505:web:83c91b8dde7a4d42a5bfe0"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = (id) => document.getElementById(id);
+
+function mostrar(texto, tipo) {
+  const m = $("mensaje");
+  m.className = tipo;
+  m.textContent = texto;
+}
+
+function traducirError(codigo) {
+  switch (codigo) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-email":
+      return "correo o contraseña incorrectos.";
+    case "auth/too-many-requests":
+      return "demasiados intentos. Espera unos minutos.";
+    case "auth/unauthorized-domain":
+      return "esta dirección no está autorizada en Firebase.";
+    case "auth/network-request-failed":
+      return "no hay conexión a internet.";
+    default:
+      return codigo;
+  }
+}
+
+onAuthStateChanged(auth, (usuario) => {
+  if (usuario) {
+    $("pantallaLogin").classList.add("oculto");
+    $("pantallaDentro").classList.remove("oculto");
+    $("quien").textContent = usuario.email;
+  } else {
+    $("pantallaDentro").classList.add("oculto");
+    $("pantallaLogin").classList.remove("oculto");
+  }
+});
+
+$("btnEntrar").addEventListener("click", async () => {
+  try {
+    await signInWithEmailAndPassword(auth, $("email").value.trim(), $("clave").value);
+    mostrar("Sesión iniciada correctamente.", "ok");
+  } catch (e) {
+    mostrar("No se ha podido entrar: " + traducirError(e.code), "error");
+  }
+});
+
+$("btnProbar").addEventListener("click", async () => {
+  try {
+    await addDoc(collection(db, "pruebas"), {
+      texto: "Prueba de conexión",
+      usuario: auth.currentUser.email,
+      fecha: serverTimestamp()
+    });
+    const datos = await getDocs(collection(db, "pruebas"));
+    mostrar("Todo funciona. Se ha guardado una prueba en la base de datos. Pruebas guardadas hasta ahora: " + datos.size + ".", "ok");
+  } catch (e) {
+    const texto = e.code === "permission-denied"
+      ? "permiso denegado (revisar las reglas de Firestore)."
+      : e.message;
+    mostrar("Error con la base de datos: " + texto, "error");
+  }
+});
+
+$("btnSalir").addEventListener("click", async () => {
+  await signOut(auth);
+  mostrar("Sesión cerrada.", "ok");
+});
+</script>
+</body>
+</html>
