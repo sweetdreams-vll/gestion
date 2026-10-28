@@ -20,7 +20,7 @@ const CONFIG_IA = {
   appId: "1:870404185505:web:83c91b8dde7a4d42a5bfe0"
 };
 const SDK_IA = "https://www.gstatic.com/firebasejs/12.9.0/";
-const MODELO_IA = "gemini-2.5-flash";
+const MODELO_IA = "gemini-3.8-flash";
 const LIMITE_EFECTIVO = 100000; // 1.000 € en céntimos
 const TIPOS_IVA = [21, 10, 5, 4, 2, 0];
 
