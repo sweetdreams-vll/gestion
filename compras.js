@@ -22,7 +22,7 @@ const CONFIG_IA = {
 const SDK_IA = "https://www.gstatic.com/firebasejs/12.9.0/";
 // Modelos de IA por orden de preferencia. Google los va retirando: si uno deja de existir,
 // la app prueba el siguiente o el que Google recomiende en su mensaje de error.
-const MODELOS_IA = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
+const MODELOS_IA = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"];
 const LIMITE_EFECTIVO = 100000; // 1.000 € en céntimos
 const TIPOS_IVA = [21, 10, 5, 4, 2, 0];
 
@@ -408,6 +408,7 @@ async function comprimirImagen(file) {
       max = Math.round(max * 0.8);
       calidad = Math.max(0.5, calidad - 0.06);
     }
+    if (!datos || datos.length < 1000) throw new Error("No se ha podido procesar la foto. Prueba otra vez o elige una captura de pantalla.");
     return datos;
   } finally {
     URL.revokeObjectURL(url);
@@ -510,6 +511,10 @@ async function leerConIA(cont) {
         if (/404|not found|no longer available|not supported/i.test(m)) {
           const siguiente = MODELOS_IA.find((x) => !probados.has(x));
           if (siguiente) { nombre = siguiente; continue; }
+        }
+        if (/429|quota|RESOURCE_EXHAUSTED/i.test(m)) {
+          const otro = MODELOS_IA.find((x) => !probados.has(x));
+          if (otro) { nombre = otro; continue; }
         }
         if (pensarPoco && /thinking/i.test(m)) { pensarPoco = false; continue; }
         if (/Failed to fetch|network|fetch-error|503|UNAVAILABLE|overloaded/i.test(m) && reintentosRed < 2) {
