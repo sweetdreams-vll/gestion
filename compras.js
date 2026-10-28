@@ -20,7 +20,9 @@ const CONFIG_IA = {
   appId: "1:870404185505:web:83c91b8dde7a4d42a5bfe0"
 };
 const SDK_IA = "https://www.gstatic.com/firebasejs/12.9.0/";
-const MODELO_IA = "gemini-3.8-flash";
+// Modelos de IA por orden de preferencia. Google los va retirando: si uno deja de existir,
+// la app prueba el siguiente o el que Google recomiende en su mensaje de error.
+const MODELOS_IA = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
 const LIMITE_EFECTIVO = 100000; // 1.000 € en céntimos
 const TIPOS_IVA = [21, 10, 5, 4, 2, 0];
 
@@ -200,7 +202,7 @@ async function pintarNueva(cont) {
       ${adj ? (adj.tipo === "application/pdf"
         ? `<p style="margin-bottom:0">PDF: ${esc(adj.nombre)}${adj.guardable ? "" : ' <span class="badge anulada">demasiado grande para guardarlo</span>'}</p>`
         : `<img class="foto-previa" alt="Foto de la factura" src="data:image/jpeg;base64,${adj.datos}">`) : ""}
-      ${leyendo ? `<div class="estado neutro">Leyendo la factura… puede tardar unos segundos.</div>` : ""}
+      ${leyendo ? `<div class="estado neutro" id="nProgreso">Leyendo la factura… No salgas de la app.</div>` : ""}
       ${adj && !leyendo ? `<button class="sec" id="nReleer" type="button">Volver a leer con IA</button>` : ""}
       <small class="nota">También puedes rellenarla a mano sin foto.</small>
     </div>
@@ -416,9 +418,6 @@ async function cargarArchivo(file, cont) {
   try {
     if (file.type === "application/pdf") {
       const datos = await leerComoBase64(file);
-      borrador.adjunto = { tipo: "application/pdf", datos, nombre: file.name, guardable: datos.length < 900000 };
-    } else {
-      const datos = await comprimirImagen(file);
       borrador.adjunto = { tipo: "image/jpeg", datos, nombre: file.name, guardable: datos.length < 900000 };
     }
   } catch (e) {
@@ -427,18 +426,28 @@ async function cargarArchivo(file, cont) {
   await leerConIA(cont);
 }
 
-let modeloIA = null;
-async function obtenerModelo() {
-  if (modeloIA) return modeloIA;
-  const { initializeApp } = await import(SDK_IA + "firebase-app.js");
-  const { getAI, getGenerativeModel, GoogleAIBackend } = await import(SDK_IA + "firebase-ai.js");
-  const appIA = initializeApp(CONFIG_IA, "lector-facturas");
-  const ai = getAI(appIA, { backend: new GoogleAIBackend() });
-  modeloIA = getGenerativeModel(ai, {
-    model: MODELO_IA,
-    generationConfig: { responseMimeType: "application/json", temperature: 0 }
-  });
-  return modeloIA;
+let modeloElegido = (() => { try { return localStorage.getItem("modeloIA") || MODELOS_IA[0]; } catch (e) { return MODELOS_IA[0]; } })();
+const modelosCreados = {};
+async function obtenerModelo(nombre, pensarPoco) {
+  const clave = nombre + (pensarPoco ? "-rapido" : "");
+  if (modelosCreados[clave]) return modelosCreados[clave];
+  const { initializeApp, getApps } = await import(SDK_IA + "firebase-app.js");
+  const iaSdk = await import(SDK_IA + "firebase-ai.js");
+  const appIA = getApps().find((a) => a.name === "lector-facturas") || initializeApp(CONFIG_IA, "lector-facturas");
+  const ai = iaSdk.getAI(appIA, { backend: new iaSdk.GoogleAIBackend() });
+  const generationConfig = { responseMimeType: "application/json" };
+  // Pensar poco = respuesta más rápida; leer una factura no necesita razonar mucho
+  if (pensarPoco) generationConfig.thinkingConfig = { thinkingLevel: iaSdk.ThinkingLevel ? iaSdk.ThinkingLevel.LOW : "LOW" };
+  modelosCreados[clave] = iaSdk.getGenerativeModel(ai, { model: nombre, generationConfig });
+  return modelosCreados[clave];
+}
+
+function mensajeErrorIA(e) {
+  const m = String((e && e.message) || e);
+  if (/429|quota|RESOURCE_EXHAUSTED/i.test(m)) return "Se ha agotado por hoy el límite gratuito de lecturas automáticas. Prueba más tarde o rellénala a mano.";
+  if (/Failed to fetch|network|fetch-error|ERR_/i.test(m)) return "Se ha cortado la conexión mientras leía. Comprueba la cobertura o el wifi y pulsa «Volver a leer con IA». No salgas de la app mientras lee.";
+  if (/JSON/i.test(m)) return "La IA ha devuelto una respuesta que no se entiende. Prueba con una foto más nítida o rellénala a mano.";
+  return "No se ha podido leer automáticamente (" + m.slice(0, 160) + "). Prueba otra foto o rellénala a mano.";
 }
 
 const INSTRUCCIONES_IA = `Eres un asistente que lee facturas y albaranes de proveedores de un bar en España.
@@ -460,22 +469,65 @@ async function leerConIA(cont) {
   if (!adj || leyendo) return;
   leyendo = true;
   await pintarNueva(cont);
+
+  // Mantener la pantalla encendida y mostrar los segundos que lleva
+  let bloqueo = null;
+  try { if (navigator.wakeLock) bloqueo = await navigator.wakeLock.request("screen"); } catch (e) { /* no pasa nada */ }
+  const inicio = Date.now();
+  const reloj = setInterval(() => {
+    const el = document.getElementById("nProgreso");
+    if (el) el.textContent = `Leyendo la factura… ${Math.round((Date.now() - inicio) / 1000)} s. No salgas de la app.`;
+  }, 1000);
+
+  let nombre = modeloElegido;
+  let pensarPoco = true;
+  let reintentosRed = 0;
+  const probados = new Set();
   try {
-    const modelo = await obtenerModelo();
-    const res = await modelo.generateContent([
-      INSTRUCCIONES_IA,
-      { inlineData: { data: adj.datos, mimeType: adj.tipo } }
-    ]);
-    const texto = res.response.text().replace(/```json|```/g, "").trim();
-    aplicarLectura(JSON.parse(texto));
-    borrador.leidaConIA = true;
-    leyendo = false;
-    await pintarNueva(cont);
-    mostrar("Factura leída. Revisa los datos antes de guardar.", "ok");
+    for (let intento = 0; intento < 6; intento++) {
+      try {
+        const modelo = await obtenerModelo(nombre, pensarPoco);
+        const res = await modelo.generateContent([
+          INSTRUCCIONES_IA,
+          { inlineData: { data: adj.datos, mimeType: adj.tipo } }
+        ]);
+        const texto = res.response.text().replace(/```json|```/g, "").trim();
+        aplicarLectura(JSON.parse(texto));
+        borrador.leidaConIA = true;
+        if (nombre !== modeloElegido) {
+          modeloElegido = nombre;
+          try { localStorage.setItem("modeloIA", nombre); } catch (e) { /* sin memoria local */ }
+        }
+        leyendo = false;
+        await pintarNueva(cont);
+        mostrar(`Factura leída en ${Math.round((Date.now() - inicio) / 1000)} s. Revisa los datos antes de guardar.`, "ok");
+        return;
+      } catch (e) {
+        const m = String((e && e.message) || e);
+        probados.add(nombre);
+        const recomendado = m.match(/use models\/([a-z0-9.\-]+)/i);
+        if (recomendado && !probados.has(recomendado[1])) { nombre = recomendado[1]; continue; }
+        if (/404|not found|no longer available|not supported/i.test(m)) {
+          const siguiente = MODELOS_IA.find((x) => !probados.has(x));
+          if (siguiente) { nombre = siguiente; continue; }
+        }
+        if (pensarPoco && /thinking/i.test(m)) { pensarPoco = false; continue; }
+        if (/Failed to fetch|network|fetch-error|503|UNAVAILABLE|overloaded/i.test(m) && reintentosRed < 2) {
+          reintentosRed++;
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error("No hay ningún modelo de IA disponible");
   } catch (e) {
     leyendo = false;
     await pintarNueva(cont);
-    mostrar("No se ha podido leer automáticamente (" + (e.message || e) + "). Puedes probar otra foto o rellenarla a mano.", "mal");
+    mostrar(mensajeErrorIA(e), "mal");
+  } finally {
+    clearInterval(reloj);
+    try { if (bloqueo) await bloqueo.release(); } catch (e) { /* ya liberado */ }
   }
 }
 
