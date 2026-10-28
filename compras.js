@@ -23,6 +23,9 @@ const SDK_IA = "https://www.gstatic.com/firebasejs/12.9.0/";
 // Modelos de IA por orden de preferencia. Google los va retirando: si uno deja de existir,
 // la app prueba el siguiente o el que Google recomiende en su mensaje de error.
 const MODELOS_IA = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"];
+// Lector de PDF (pdf.js): convierte las páginas del PDF en imágenes antes de enviarlas a la IA
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
+const MAX_PAGINAS_PDF = 3;
 const LIMITE_EFECTIVO = 100000; // 1.000 € en céntimos
 const TIPOS_IVA = [21, 10, 5, 4, 2, 0];
 
@@ -200,8 +203,8 @@ async function pintarNueva(cont) {
       <label class="boton-archivo sec" for="nArchivo">Elegir foto o PDF del móvil</label>
       <input id="nArchivo" type="file" accept="image/*,application/pdf" hidden>
       ${adj ? (adj.tipo === "application/pdf"
-        ? `<p style="margin-bottom:0">PDF: ${esc(adj.nombre)}${adj.guardable ? "" : ' <span class="badge anulada">demasiado grande para guardarlo</span>'}</p>`
-        : `<img class="foto-previa" alt="Foto de la factura" src="data:image/jpeg;base64,${adj.datos}">`) : ""}
+        ? `<p style="margin-bottom:0">PDF: ${esc(adj.nombre)}${adj.guardable ? "" : ' <span class="badge pendiente">se guardará la primera página</span>'}</p>${adj.paginas ? `<img class="foto-previa" alt="Primera página del PDF" src="data:image/jpeg;base64,${adj.paginas[0]}">` : ""}`
+        : `<img class="foto-previa" alt="Foto de la factura" src="data:${adj.tipo};base64,${adj.datos}">`) : ""}
       ${leyendo ? `<div class="estado neutro" id="nProgreso">Leyendo la factura… No salgas de la app.</div>` : ""}
       ${adj && !leyendo ? `<button class="sec" id="nReleer" type="button">Volver a leer con IA</button>` : ""}
       <small class="nota">También puedes rellenarla a mano sin foto.</small>
@@ -387,39 +390,101 @@ function leerComoBase64(file) {
   });
 }
 
-async function comprimirImagen(file) {
+// Lee un archivo y lo devuelve en base64 (lo que se envía a la IA y se guarda)
+function blobABase64(blob) {
+  return new Promise((ok, ko) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",")[1] || "");
+    r.onerror = () => ko(new Error("No se ha podido leer la imagen"));
+    r.readAsDataURL(blob);
+  });
+}
+
+// Abre la foto: primero con el método moderno del móvil y, si falla, con el clásico
+async function abrirImagen(file) {
+  try {
+    if (window.createImageBitmap) return await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch (e) { /* probamos el método clásico */ }
   const url = URL.createObjectURL(file);
   try {
-    const img = await new Promise((ok, ko) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = () => ko(new Error("No se ha podido abrir la imagen"));
-      i.src = url;
-    });
-    let max = 1600, calidad = 0.72, datos = "";
-    for (let intento = 0; intento < 6; intento++) {
-      const factor = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement("canvas");
-      c.width = Math.round(img.width * factor);
-      c.height = Math.round(img.height * factor);
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      datos = c.toDataURL("image/jpeg", calidad).split(",")[1];
-      if (datos.length < 850000) break;
-      max = Math.round(max * 0.8);
-      calidad = Math.max(0.5, calidad - 0.06);
-    }
-    if (!datos || datos.length < 1000) throw new Error("No se ha podido procesar la foto. Prueba otra vez o elige una captura de pantalla.");
-    return datos;
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
   } finally {
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+}
+
+// Reduce la foto a un tamaño razonable (máx. 1600 px) en JPEG.
+// Si el móvil no consigue procesarla, se usa la foto original si no es enorme.
+async function comprimirImagen(file) {
+  try {
+    const img = await abrirImagen(file);
+    const ancho = img.width, alto = img.height;
+    if (!ancho || !alto) throw new Error("imagen vacía");
+    let max = 1600, calidad = 0.75;
+    for (let intento = 0; intento < 5; intento++) {
+      const factor = Math.min(1, max / Math.max(ancho, alto));
+    const c = document.createElement("canvas");
+      c.width = Math.round(ancho * factor);
+      c.height = Math.round(alto * factor);
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", calidad));
+      if (blob && blob.size > 2000 && blob.type === "image/jpeg") {
+        const datos = await blobABase64(blob);
+        if (datos.startsWith("/9j/") && datos.length < 850000) return { datos, tipo: "image/jpeg" };
+      }
+      max = Math.round(max * 0.8);
+      calidad = Math.max(0.5, calidad - 0.07);
+    }
+    throw new Error("no se ha podido comprimir");
+  } catch (e) {
+    // Plan B: enviar la foto tal cual si no pasa de 3 MB
+    if (file.size && file.size < 3 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(file.type)) {
+      return { datos: await blobABase64(file), tipo: file.type };
+    }
+    throw new Error("Este móvil no ha podido procesar la foto (" + Math.round(file.size / 1024) + " KB, " + (file.type || "tipo desconocido") + "). Prueba con una captura de pantalla de la factura.");
+  }
+}
+
+// Convierte las primeras páginas de un PDF en fotos JPEG (más rápido y fiable para la IA)
+async function pdfAImagenes(base64) {
+  const pdfjs = await import(PDFJS + "pdf.min.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs";
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+  const paginas = [];
+  for (let i = 1; i <= Math.min(pdf.numPages, MAX_PAGINAS_PDF); i++) {
+    const pagina = await pdf.getPage(i);
+    const base = pagina.getViewport({ scale: 1 });
+    const escala = Math.min(2.5, 1600 / Math.max(base.width, base.height));
+    const vista = pagina.getViewport({ scale: escala });
+    const c = document.createElement("canvas");
+    c.width = Math.round(vista.width);
+    c.height = Math.round(vista.height);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    await pagina.render({ canvasContext: ctx, viewport: vista }).promise;
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.8));
+    if (blob && blob.size > 2000) paginas.push(await blobABase64(blob));
+  }
+  if (!paginas.length) throw new Error("PDF sin páginas legibles");
+  return paginas;
 }
 
 async function cargarArchivo(file, cont) {
   try {
     if (file.type === "application/pdf") {
       const datos = await leerComoBase64(file);
-      borrador.adjunto = { tipo: "image/jpeg", datos, nombre: file.name, guardable: datos.length < 900000 };
+      borrador.adjunto = { tipo: "application/pdf", datos, nombre: file.name, guardable: datos.length < 900000 };
+    } else {
+      const { datos, tipo } = await comprimirImagen(file);
+      borrador.adjunto = { tipo, datos, nombre: file.name, guardable: datos.length < 900000 };
     }
   } catch (e) {
     return mostrar(e.message, "mal");
@@ -427,7 +492,13 @@ async function cargarArchivo(file, cont) {
   await leerConIA(cont);
 }
 
-let modeloElegido = (() => { try { return localStorage.getItem("modeloIA") || MODELOS_IA[0]; } catch (e) { return MODELOS_IA[0]; } })();
+// Se empieza siempre por el primero de la lista; solo se recuerda un modelo nuevo que haya recomendado Google
+let modeloElegido = (() => {
+  try {
+    const guardado = localStorage.getItem("modeloIA");
+    return guardado && !MODELOS_IA.includes(guardado) ? guardado : MODELOS_IA[0];
+  } catch (e) { return MODELOS_IA[0]; }
+})();
 const modelosCreados = {};
 async function obtenerModelo(nombre, pensarPoco) {
   const clave = nombre + (pensarPoco ? "-rapido" : "");
@@ -445,8 +516,9 @@ async function obtenerModelo(nombre, pensarPoco) {
 
 function mensajeErrorIA(e) {
   const m = String((e && e.message) || e);
+  const tamano = borrador.adjunto ? " Archivo: " + Math.round(borrador.adjunto.datos.length * 0.75 / 1024) + " KB." : "";
   if (/429|quota|RESOURCE_EXHAUSTED/i.test(m)) return "Se ha agotado por hoy el límite gratuito de lecturas automáticas. Prueba más tarde o rellénala a mano.";
-  if (/Failed to fetch|network|fetch-error|ERR_/i.test(m)) return "Se ha cortado la conexión mientras leía. Comprueba la cobertura o el wifi y pulsa «Volver a leer con IA». No salgas de la app mientras lee.";
+  if (/Failed to fetch|network|fetch-error|ERR_/i.test(m)) return "No se ha podido enviar el documento a la IA. Pulsa «Volver a leer con IA» y no salgas de la app mientras lee." + tamano + " Detalle: " + m.slice(-80);
   if (/JSON/i.test(m)) return "La IA ha devuelto una respuesta que no se entiende. Prueba con una foto más nítida o rellénala a mano.";
   return "No se ha podido leer automáticamente (" + m.slice(0, 160) + "). Prueba otra foto o rellénala a mano.";
 }
@@ -463,6 +535,7 @@ Reglas:
 - "iva" es el porcentaje de IVA de la línea (21, 10, 4 o 0). Envases, fianzas o depósitos sin IVA llevan 0.
 - "total" es el total final a pagar que aparece en el documento.
 - "fecha" y "vencimiento" en formato AAAA-MM-DD. Si no aparece el vencimiento, déjalo vacío.
+- Si recibes varias imágenes, son páginas seguidas del mismo documento.
 - Si un dato no aparece o no se lee bien, déjalo vacío o en 0. No inventes nada.`;
 
 async function leerConIA(cont) {
@@ -480,6 +553,15 @@ async function leerConIA(cont) {
     if (el) el.textContent = `Leyendo la factura… ${Math.round((Date.now() - inicio) / 1000)} s. No salgas de la app.`;
   }, 1000);
 
+  // Los PDF se envían como fotos de sus páginas; si no se puede, se envía el PDF tal cual
+  let partes = [{ inlineData: { data: adj.datos, mimeType: adj.tipo } }];
+  if (adj.tipo === "application/pdf") {
+    try {
+      if (!adj.paginas) adj.paginas = await pdfAImagenes(adj.datos);
+      partes = adj.paginas.map((d) => ({ inlineData: { data: d, mimeType: "image/jpeg" } }));
+    } catch (e) { /* se envía el PDF original */ }
+  }
+
   let nombre = modeloElegido;
   let pensarPoco = true;
   let reintentosRed = 0;
@@ -488,10 +570,7 @@ async function leerConIA(cont) {
     for (let intento = 0; intento < 6; intento++) {
       try {
         const modelo = await obtenerModelo(nombre, pensarPoco);
-        const res = await modelo.generateContent([
-          INSTRUCCIONES_IA,
-          { inlineData: { data: adj.datos, mimeType: adj.tipo } }
-        ]);
+        const res = await modelo.generateContent([INSTRUCCIONES_IA, ...partes]);
         const texto = res.response.text().replace(/```json|```/g, "").trim();
         aplicarLectura(JSON.parse(texto));
         borrador.leidaConIA = true;
@@ -630,12 +709,16 @@ async function guardarFactura(cont) {
   }
 
   const refFactura = doc(collection(db, "facturas"));
-  const conAdjunto = !!(b.adjunto && b.adjunto.guardable);
+  // Si el PDF es demasiado grande para guardarlo, se guarda la foto de su primera página
+  let guardar = null;
+  if (b.adjunto && b.adjunto.guardable) guardar = { tipo: b.adjunto.tipo, datos: b.adjunto.datos };
+  else if (b.adjunto && b.adjunto.paginas && b.adjunto.paginas[0] && b.adjunto.paginas[0].length < 900000) guardar = { tipo: "image/jpeg", datos: b.adjunto.paginas[0] };
+  const conAdjunto = !!guardar;
   if (conAdjunto) {
     lote.set(doc(db, "adjuntos", refFactura.id), {
       facturaId: refFactura.id,
-      tipo: b.adjunto.tipo,
-      datos: b.adjunto.datos,
+      tipo: guardar.tipo,
+      datos: guardar.datos,
       autorUid: u.uid,
       creadoEn: serverTimestamp()
     });
@@ -664,7 +747,7 @@ async function guardarFactura(cont) {
     vencimiento: pagada ? null : (b.vencimiento || null),
     observaciones: b.observaciones.trim(),
     leidaConIA: b.leidaConIA,
-    adjunto: conAdjunto ? b.adjunto.tipo : null,
+    adjunto: conAdjunto ? guardar.tipo : null,
     anulada: false,
     autorUid: u.uid,
     autorNombre: u.nombre,
@@ -687,7 +770,7 @@ async function guardarFactura(cont) {
           <div><span>Total</span><strong>${eur(resumen.total)}</strong></div>
           <div><span>Pago</span><strong>${resumen.formaPago === "cajaRoja" ? "Efectivo, caja roja" : resumen.formaPago === "banco" ? "Pagada por banco" : "Pendiente"}</strong></div>
         </div>
-        ${b.adjunto && !b.adjunto.guardable ? `<p class="suave">El PDF era demasiado grande para guardarlo en la app. Guarda el original en el correo del bar.</p>` : ""}
+        ${b.adjunto && !b.adjunto.guardable ? `<p class="suave">El PDF era demasiado grande para guardarlo entero: se ha guardado la primera página como foto. Guarda el original en el correo del bar.</p>` : ""}
         <a class="boton" href="#/compras/nueva" id="nOtra">Registrar otra</a>
         <a class="boton sec" href="#/inicio">Volver al inicio</a>
       </div>`;
