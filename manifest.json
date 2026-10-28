@@ -1,0 +1,12 @@
+{
+  "name": "Gestión Sweet Dreams",
+  "short_name": "Sweet Dreams",
+  "start_url": "./#/inicio",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#1a1023",
+  "icons": [
+    { "src": "IMG_20261028_113850.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ]
+}
