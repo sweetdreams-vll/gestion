@@ -2,50 +2,241 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1023">
 <title>Gestión Sweet Dreams</title>
 <style>
-  body { font-family: system-ui, -apple-system, Roboto, sans-serif; background: #1a1023; color: #f5f0fa; margin: 0; padding: 24px; display: flex; justify-content: center; }
-  .caja { width: 100%; max-width: 420px; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; }
-  p.sub { margin: 0 0 24px; color: #c9b8dc; }
-  label { display: block; margin: 14px 0 6px; font-size: .95rem; }
-  input { width: 100%; box-sizing: border-box; padding: 14px; font-size: 1rem; border-radius: 10px; border: 1px solid #4a3560; background: #2a1b38; color: #fff; }
-  button { width: 100%; padding: 14px; font-size: 1rem; border: none; border-radius: 10px; margin-top: 18px; background: #e0539a; color: #fff; font-weight: 600; }
-  button.sec { background: #3b2a4d; }
-  #mensaje { margin-top: 18px; padding: 12px; border-radius: 10px; display: none; line-height: 1.4; }
-  #mensaje.ok { background: #1f4d33; display: block; }
-  #mensaje.error { background: #5c1f2a; display: block; }
-  .oculto { display: none; }
+  :root {
+    --fondo: #1a1023;
+    --panel: #24172f;
+    --panel2: #2d1e3b;
+    --borde: #45325a;
+    --texto: #f5f0fa;
+    --suave: #bfaed3;
+    --rosa: #e0539a;
+    --verdeF: #1f4d33;
+    --rojoF: #5c1f2a;
+    --ambarF: #5a4214;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+  }
+  .app { max-width: 560px; margin: 0 auto; }
+  header { margin-bottom: 12px; }
+  header h1 { font-size: 1.35rem; margin: 0; }
+  header .quien { color: var(--suave); font-size: .9rem; margin-top: 2px; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  nav button { flex: 1 1 auto; width: auto; margin: 0; padding: 10px 12px; font-size: .9rem; background: var(--panel2); border: 1px solid var(--borde); }
+  nav button.activo { background: var(--rosa); border-color: var(--rosa); }
+  .panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .panel h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  label { display: block; margin: 10px 0 6px; font-size: .9rem; color: var(--suave); }
+  input, select, textarea {
+    width: 100%; padding: 12px; font-size: 1rem; border-radius: 10px;
+    border: 1px solid var(--borde); background: var(--panel2); color: var(--texto); font-family: inherit;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  input[readonly] { opacity: .7; }
+  button {
+    width: 100%; padding: 14px; font-size: 1rem; border: none; border-radius: 10px; margin-top: 14px;
+    background: var(--rosa); color: #fff; font-weight: 600; font-family: inherit; cursor: pointer;
+  }
+  button.sec { background: var(--panel2); border: 1px solid var(--borde); }
+  button:disabled { opacity: .5; }
+  :focus-visible { outline: 2px solid var(--rosa); outline-offset: 2px; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .recuento { display: grid; grid-template-columns: 64px 1fr 92px; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .recuento .valor { font-weight: 700; text-align: right; }
+  .recuento .linea { text-align: right; color: var(--suave); font-variant-numeric: tabular-nums; }
+  .recuento.cabecera { color: var(--suave); font-size: .8rem; margin-bottom: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chips button { width: auto; margin: 0; padding: 8px 12px; font-size: .85rem; background: var(--panel2); border: 1px solid var(--borde); }
+  .gasto { display: grid; grid-template-columns: 1fr 96px; gap: 6px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--borde); }
+  .gasto button { margin: 0; padding: 10px 0; background: var(--rojoF); font-size: .9rem; }
+  .resumen > div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--borde); }
+  .resumen > div:last-child { border-bottom: none; }
+  .resumen strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .estado { margin-top: 12px; padding: 12px; border-radius: 10px; font-weight: 700; text-align: center; }
+  .ok { background: var(--verdeF); }
+  .mal { background: var(--rojoF); }
+  .sobra { background: var(--ambarF); }
+  .info { background: var(--panel2); border: 1px solid var(--borde); }
+  #mensaje { position: sticky; top: 8px; z-index: 5; padding: 12px; border-radius: 10px; margin-bottom: 12px; display: none; line-height: 1.4; }
+  #mensaje.ok, #mensaje.mal, #mensaje.info { display: block; }
+  .oculto { display: none !important; }
+  .semana h3 { font-size: .95rem; margin: 20px 0 8px; color: var(--suave); }
+  .item { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 12px; margin: 0 0 8px; font-weight: 400; }
+  .item .top { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+  .item .sub { display: flex; justify-content: space-between; gap: 8px; color: var(--suave); font-size: .85rem; margin-top: 4px; }
+  .pos { color: #f0c36a; }
+  .neg { color: #ff8a8a; }
+  .cero { color: #7dd39f; }
+  .etiqueta { display: inline-block; font-size: .75rem; padding: 2px 8px; border-radius: 20px; background: var(--ambarF); margin-left: 6px; font-weight: 400; }
+  .check { display: flex; gap: 10px; align-items: center; margin-top: 14px; color: var(--suave); }
+  .check input { width: auto; }
+  small.nota { display: block; color: var(--suave); margin-top: 10px; line-height: 1.4; }
+  footer { text-align: center; color: var(--suave); font-size: .75rem; margin-top: 24px; }
 </style>
 </head>
 <body>
-<div class="caja">
-  <h1>Sweet Dreams</h1>
-  <p class="sub">Gestión interna · prueba de conexión</p>
+<div class="app">
 
-  <div id="pantallaLogin">
-    <label for="email">Correo</label>
-    <input id="email" type="email" autocomplete="username">
-    <label for="clave">Contraseña</label>
-    <input id="clave" type="password" autocomplete="current-password">
-    <button id="btnEntrar">Entrar</button>
-  </div>
-
-  <div id="pantallaDentro" class="oculto">
-    <p>Has entrado como <strong id="quien"></strong></p>
-    <button id="btnProbar">Probar la base de datos</button>
-    <button id="btnSalir" class="sec">Cerrar sesión</button>
-  </div>
+  <header>
+    <h1>Sweet Dreams</h1>
+    <div class="quien" id="quien">Gestión interna</div>
+  </header>
 
   <div id="mensaje"></div>
+
+  <!-- ENTRAR -->
+  <section id="vLogin" class="panel">
+    <h2>Entrar</h2>
+    <label for="lUsuario">Usuario o correo</label>
+    <input id="lUsuario" autocomplete="username" autocapitalize="none" spellcheck="false">
+    <label for="lClave">Contraseña</label>
+    <input id="lClave" type="password" autocomplete="current-password">
+    <button id="bEntrar">Entrar</button>
+  </section>
+
+  <!-- MENÚ -->
+  <nav id="menu" class="oculto">
+    <button data-vista="vCierre">Cierre</button>
+    <button data-vista="vHistorial" class="soloSocio">Historial</button>
+    <button data-vista="vClave">Contraseña</button>
+    <button id="bSalir">Salir</button>
+  </nav>
+
+  <!-- NUEVO CIERRE -->
+  <section id="vCierre" class="oculto">
+    <div class="panel">
+      <h2>Cierre de caja</h2>
+      <label for="cFecha">Día de la caja (el día que se abre)</label>
+      <input id="cFecha" type="date">
+      <div id="cAviso"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Ticket de cierre de la registradora</h2>
+      <div class="fila">
+        <div>
+          <label for="cEfectivo">Efectivo (€)</label>
+          <input id="cEfectivo" inputmode="decimal" placeholder="0,00">
+        </div>
+        <div>
+          <label for="cTarjeta">Tarjeta (€)</label>
+          <input id="cTarjeta" inputmode="decimal" placeholder="0,00">
+        </div>
+      </div>
+      <div class="resumen" style="margin-top:10px">
+        <div><span>Total vendido</span><strong id="cTotalTicket">0,00 €</strong></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Recuento del cajón</h2>
+      <div class="recuento cabecera"><span style="text-align:right">Valor</span><span>Cantidad</span><span style="text-align:right">Total</span></div>
+      <div id="cRecuento"></div>
+      <div class="resumen"><div><span>Total contado</span><strong id="cTotalContado">0,00 €</strong></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Gastos pagados con la caja</h2>
+      <div class="chips" id="cChips"></div>
+      <div id="cGastos"></div>
+      <button class="sec" id="bOtroGasto" type="button">Añadir otro gasto</button>
+      <div class="resumen" style="margin-top:10px"><div><span>Total gastos</span><strong id="cTotalGastos">0,00 €</strong></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Resultado</h2>
+      <div class="resumen" id="cResumen"></div>
+      <div id="cEstado" class="estado ok">Cuadra</div>
+      <label for="cObs">Observaciones (opcional)</label>
+      <textarea id="cObs" placeholder="Ej.: se rompió una botella, invitación a…"></textarea>
+      <label class="check soloSocio"><input type="checkbox" id="cPrueba"> Cierre de prueba: no cuenta y no sale en el historial</label>
+      <button id="bGuardar" type="button">Guardar cierre</button>
+      <small class="nota">Una vez guardado, el cierre no se puede modificar ni borrar. Si hay un error, un socio lo corrige desde el historial y la corrección queda registrada.</small>
+    </div>
+  </section>
+
+  <!-- CIERRE GUARDADO -->
+  <section id="vHecho" class="oculto">
+    <div class="panel">
+      <h2 id="hTitulo">Cierre guardado</h2>
+      <div id="hResumen"></div>
+      <button class="sec" id="bVolverCierre" type="button">Volver</button>
+    </div>
+  </section>
+
+  <!-- HISTORIAL (solo socios) -->
+  <section id="vHistorial" class="oculto">
+    <div class="panel">
+      <h2>Historial de cierres</h2>
+      <small class="nota" style="margin-top:0">Agrupado por semanas, de lunes a domingo. Pulsa un día para ver el detalle o corregirlo.</small>
+      <button class="sec" id="bRecargar" type="button">Actualizar</button>
+    </div>
+    <div id="hLista"></div>
+  </section>
+
+  <!-- DETALLE DE UN CIERRE (solo socios) -->
+  <section id="vDetalle" class="oculto">
+    <div id="dContenido"></div>
+    <div class="panel">
+      <h2>Añadir corrección</h2>
+      <label for="dCampo">¿Qué hay que corregir?</label>
+      <select id="dCampo">
+        <option value="ticketEfectivo">Efectivo del ticket</option>
+        <option value="ticketTarjeta">Tarjeta del ticket</option>
+        <option value="totalRecuento">Total contado</option>
+        <option value="totalGastos">Total gastos</option>
+        <option value="nota">Solo una nota (sin cambiar importes)</option>
+      </select>
+      <div id="dValorCaja">
+        <small class="nota" id="dActual"></small>
+        <label for="dValor">Valor correcto (€)</label>
+        <input id="dValor" inputmode="decimal" placeholder="0,00">
+      </div>
+      <label for="dMotivo">Motivo</label>
+      <textarea id="dMotivo" placeholder="Ej.: el ticket de cierre decía 812,50 y se apuntó 821,50"></textarea>
+      <button id="bCorregir" type="button">Guardar corrección</button>
+      <button class="sec" id="bVolverHist" type="button">Volver al historial</button>
+    </div>
+  </section>
+
+  <!-- CAMBIAR CONTRASEÑA -->
+  <section id="vClave" class="oculto">
+    <div class="panel">
+      <h2>Cambiar mi contraseña</h2>
+      <label for="kActual">Contraseña actual</label>
+      <input id="kActual" type="password" autocomplete="current-password">
+      <label for="kNueva">Contraseña nueva (mínimo 6 caracteres)</label>
+      <input id="kNueva" type="password" autocomplete="new-password">
+      <label for="kRepite">Repite la contraseña nueva</label>
+      <input id="kRepite" type="password" autocomplete="new-password">
+      <button id="bCambiarClave" type="button">Cambiar contraseña</button>
+    </div>
+  </section>
+
+  <footer>Gestión Sweet Dreams, versión 1 (caja y arqueo)</footer>
 </div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+  query, orderBy, limit, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* ===== CONFIGURACIÓN ===== */
 const firebaseConfig = {
   apiKey: "AIzaSyDnNDk2BwqW7h_gB3mbsHl4VZKSM5LN_iA",
   authDomain: "sweet-dreams-gestion.firebaseapp.com",
@@ -55,76 +246,611 @@ const firebaseConfig = {
   appId: "1:870404185505:web:83c91b8dde7a4d42a5bfe0"
 };
 
+// Deben coincidir con las reglas de Firestore
+const SOCIOS = {
+  "MbrK5sSHwYQYzhslXDBOdAL1Erk1": "Brian",
+  "PoLN5tj8LzVJSewok43D7FDni3E2": "Milito"
+};
+const EQUIPO = {
+  "zfFwX3dgJxYF9ZqlJ4CS8svS5NC3": "Alba"
+};
+const DOMINIO_EQUIPO = "sweetdreams.equipo";
+
+// Todos los importes se guardan en céntimos (números enteros) para evitar errores de redondeo
+const FONDO = 25000; // 250 € de cambio
+const BILLETES = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10];
+const GASTOS_RAPIDOS = ["Hieloneta", "DJ", "Camarero/a", "Portero", "Varios"];
+const CAMPOS = {
+  ticketEfectivo: "Efectivo del ticket",
+  ticketTarjeta: "Tarjeta del ticket",
+  totalRecuento: "Total contado",
+  totalGastos: "Total gastos",
+  nota: "Nota"
+};
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
 const $ = (id) => document.getElementById(id);
+let usuario = null;
+let detalleActual = null;
+let avisoSalida = null;
+let cacheCierres = [];
+let cacheCorr = {};
 
-function mostrar(texto, tipo) {
+/* ===== UTILIDADES ===== */
+function eur(c) {
+  return (c / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+function eurSigno(c) {
+  return (c > 0 ? "+" : "") + eur(c);
+}
+function etiquetaBillete(b) {
+  return b >= 100 ? (b / 100) + " €" : (b / 100).toFixed(2).replace(".", ",") + " €";
+}
+function leerEur(texto) {
+  let s = String(texto || "").trim().replace(/[€\s]/g, "");
+  if (s === "") return null;
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  const n = Number(s);
+  if (!isFinite(n) || n < 0) return NaN;
+  return Math.round(n * 100);
+}
+function leerEntero(t) {
+  const n = parseInt(String(t || "").trim(), 10);
+  return isNaN(n) || n < 0 ? 0 : n;
+}
+function esc(t) {
+  return String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function iso(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function deIso(t) {
+  const [y, m, d] = t.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+// Antes de las 8 de la mañana, la caja pertenece al día anterior (el día que se abrió)
+function fechaCajaHoy() {
+  const d = new Date();
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return iso(d);
+}
+function fechaLarga(t) {
+  const s = deIso(t).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function lunesDe(t) {
+  const d = deIso(t);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return iso(d);
+}
+function horaDe(ts) {
+  if (!ts || !ts.toDate) return "";
+  return ts.toDate().toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function ms(ts) {
+  return ts && ts.toMillis ? ts.toMillis() : Date.now();
+}
+function claseDescuadre(c) { return c === 0 ? "cero" : (c < 0 ? "neg" : "pos"); }
+function claseEstado(c) { return c === 0 ? "ok" : (c < 0 ? "mal" : "sobra"); }
+function textoDescuadre(c) {
+  if (c === 0) return "Cuadra";
+  return c < 0 ? "Falta " + eur(-c) : "Sobra " + eur(c);
+}
+function mostrar(texto, tipo = "info") {
   const m = $("mensaje");
   m.className = tipo;
   m.textContent = texto;
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
-
+function limpiarMensaje() {
+  const m = $("mensaje");
+  m.className = "";
+  m.textContent = "";
+}
 function traducirError(codigo) {
   switch (codigo) {
     case "auth/invalid-credential":
     case "auth/wrong-password":
     case "auth/user-not-found":
     case "auth/invalid-email":
-      return "correo o contraseña incorrectos.";
+      return "usuario o contraseña incorrectos.";
     case "auth/too-many-requests":
       return "demasiados intentos. Espera unos minutos.";
-    case "auth/unauthorized-domain":
-      return "esta dirección no está autorizada en Firebase.";
     case "auth/network-request-failed":
       return "no hay conexión a internet.";
+    case "auth/weak-password":
+      return "la contraseña es demasiado corta (mínimo 6 caracteres).";
     default:
       return codigo;
   }
 }
 
-onAuthStateChanged(auth, (usuario) => {
-  if (usuario) {
-    $("pantallaLogin").classList.add("oculto");
-    $("pantallaDentro").classList.remove("oculto");
-    $("quien").textContent = usuario.email;
-  } else {
-    $("pantallaDentro").classList.add("oculto");
-    $("pantallaLogin").classList.remove("oculto");
+/* ===== CÁLCULO DE LA CAJA ===== */
+// Debería haber = 250 € de cambio + efectivo del ticket − gastos pagados con la caja
+function calcular(v) {
+  const deberiaHaber = FONDO + v.ticketEfectivo - v.totalGastos;
+  return {
+    ticketEfectivo: v.ticketEfectivo,
+    ticketTarjeta: v.ticketTarjeta,
+    ticketTotal: v.ticketEfectivo + v.ticketTarjeta,
+    totalRecuento: v.totalRecuento,
+    totalGastos: v.totalGastos,
+    deberiaHaber,
+    descuadre: v.totalRecuento - deberiaHaber,
+    aRetirar: v.totalRecuento - FONDO
+  };
+}
+function htmlResumen(r) {
+  return `
+    <div><span>Fondo de cambio</span><strong>${eur(FONDO)}</strong></div>
+    <div><span>+ Efectivo del ticket</span><strong>${eur(r.ticketEfectivo)}</strong></div>
+    <div><span>− Gastos pagados</span><strong>${eur(r.totalGastos)}</strong></div>
+    <div><span>= Debería haber en el cajón</span><strong>${eur(r.deberiaHaber)}</strong></div>
+    <div><span>Contado de verdad</span><strong>${eur(r.totalRecuento)}</strong></div>
+    <div><span>Descuadre</span><strong class="${claseDescuadre(r.descuadre)}">${r.descuadre === 0 ? "0,00 €" : eurSigno(r.descuadre)}</strong></div>
+    <div><span>A retirar (dejando ${eur(FONDO)} de cambio)</span><strong>${eur(r.aRetirar)}</strong></div>`;
+}
+
+/* ===== PANTALLAS ===== */
+const VISTAS = ["vLogin", "vCierre", "vHecho", "vHistorial", "vDetalle", "vClave"];
+function ver(id) {
+  VISTAS.forEach((v) => $(v).classList.toggle("oculto", v !== id));
+  const grupo = { vHecho: "vCierre", vDetalle: "vHistorial" }[id] || id;
+  document.querySelectorAll("nav button[data-vista]").forEach((b) => b.classList.toggle("activo", b.dataset.vista === grupo));
+}
+
+/* ===== SESIÓN ===== */
+onAuthStateChanged(auth, async (u) => {
+  limpiarMensaje();
+  if (!u) {
+    usuario = null;
+    $("menu").classList.add("oculto");
+    $("quien").textContent = "Gestión interna";
+    limpiarFormulario();
+    ver("vLogin");
+    if (avisoSalida) { mostrar(avisoSalida, "mal"); avisoSalida = null; }
+    return;
   }
+  const socio = u.uid in SOCIOS;
+  const equipo = u.uid in EQUIPO;
+  if (!socio && !equipo) {
+    avisoSalida = "Este usuario no tiene permisos en la app.";
+    await signOut(auth);
+    return;
+  }
+  usuario = { uid: u.uid, nombre: SOCIOS[u.uid] || EQUIPO[u.uid], socio };
+  $("quien").textContent = usuario.nombre + (socio ? " (socio)" : " (equipo)");
+  document.querySelectorAll(".soloSocio").forEach((e) => e.classList.toggle("oculto", !socio));
+  $("menu").classList.remove("oculto");
+  prepararCierre();
+  ver("vCierre");
 });
 
-$("btnEntrar").addEventListener("click", async () => {
+$("bEntrar").addEventListener("click", async () => {
+  let user = $("lUsuario").value.trim().toLowerCase();
+  if (!user) return mostrar("Escribe tu usuario.", "mal");
+  if (!user.includes("@")) user = user + "@" + DOMINIO_EQUIPO;
+  $("bEntrar").disabled = true;
   try {
-    await signInWithEmailAndPassword(auth, $("email").value.trim(), $("clave").value);
-    mostrar("Sesión iniciada correctamente.", "ok");
+    await signInWithEmailAndPassword(auth, user, $("lClave").value);
+    $("lClave").value = "";
   } catch (e) {
-    mostrar("No se ha podido entrar: " + traducirError(e.code), "error");
+    mostrar("No se ha podido entrar: " + traducirError(e.code), "mal");
+  } finally {
+    $("bEntrar").disabled = false;
+  }
+});
+$("lClave").addEventListener("keydown", (e) => { if (e.key === "Enter") $("bEntrar").click(); });
+$("bSalir").addEventListener("click", () => signOut(auth));
+
+document.querySelectorAll("nav button[data-vista]").forEach((b) => b.addEventListener("click", () => {
+  limpiarMensaje();
+  const v = b.dataset.vista;
+  if (v === "vHistorial") cargarHistorial();
+  if (v === "vCierre") prepararCierre();
+  ver(v);
+}));
+
+/* ===== FORMULARIO DE CIERRE ===== */
+function prepararCierre() {
+  if (!$("cRecuento").children.length) {
+    $("cRecuento").innerHTML = BILLETES.map((b) => `
+      <div class="recuento">
+        <span class="valor">${etiquetaBillete(b)}</span>
+        <input inputmode="numeric" data-billete="${b}" placeholder="0" aria-label="Cantidad de ${etiquetaBillete(b)}">
+        <span class="linea" id="l${b}">0,00 €</span>
+      </div>`).join("");
+    $("cChips").innerHTML = GASTOS_RAPIDOS.map((g) => `<button type="button" data-concepto="${esc(g)}">+ ${esc(g)}</button>`).join("");
+  }
+  if (!$("cFecha").value || !usuario.socio) $("cFecha").value = fechaCajaHoy();
+  $("cFecha").readOnly = !usuario.socio;
+  recalcular();
+  comprobarExistente();
+}
+
+function anadirGasto(concepto = "") {
+  const div = document.createElement("div");
+  div.className = "gasto";
+  div.innerHTML = `
+    <input class="gConcepto" placeholder="Concepto" value="${esc(concepto)}">
+    <input class="gImporte" inputmode="decimal" placeholder="Importe €">
+    <input class="gPersona" placeholder="Persona (opcional)">
+    <button type="button" class="gQuitar">Quitar</button>`;
+  $("cGastos").appendChild(div);
+  div.querySelector(concepto ? ".gImporte" : ".gConcepto").focus();
+  recalcular();
+}
+$("cChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-concepto]");
+  if (b) anadirGasto(b.dataset.concepto);
+});
+$("bOtroGasto").addEventListener("click", () => anadirGasto(""));
+$("cGastos").addEventListener("click", (e) => {
+  if (e.target.classList.contains("gQuitar")) {
+    e.target.closest(".gasto").remove();
+    recalcular();
+  }
+});
+$("vCierre").addEventListener("input", recalcular);
+$("cFecha").addEventListener("change", comprobarExistente);
+
+function leerFormulario() {
+  const ticketEfectivo = leerEur($("cEfectivo").value);
+  const ticketTarjeta = leerEur($("cTarjeta").value);
+  const recuento = {};
+  let totalRecuento = 0;
+  document.querySelectorAll("#cRecuento input").forEach((i) => {
+    const b = Number(i.dataset.billete);
+    const n = leerEntero(i.value);
+    recuento[b] = n;
+    totalRecuento += n * b;
+  });
+  const gastos = [];
+  let totalGastos = 0;
+  let gastoMal = false;
+  document.querySelectorAll("#cGastos .gasto").forEach((g) => {
+    const concepto = g.querySelector(".gConcepto").value.trim();
+    const persona = g.querySelector(".gPersona").value.trim();
+    const importe = leerEur(g.querySelector(".gImporte").value);
+    if (!concepto && importe === null && !persona) return; // fila vacía, se ignora
+    if (!concepto || importe === null || isNaN(importe) || importe <= 0) { gastoMal = true; return; }
+    gastos.push({ concepto, persona, importe });
+    totalGastos += importe;
+  });
+  return { ticketEfectivo, ticketTarjeta, recuento, totalRecuento, gastos, totalGastos, gastoMal };
+}
+
+function recalcular() {
+  const f = leerFormulario();
+  document.querySelectorAll("#cRecuento input").forEach((i) => {
+    const b = Number(i.dataset.billete);
+    $("l" + b).textContent = eur(leerEntero(i.value) * b);
+  });
+  const r = calcular({
+    ticketEfectivo: Number.isFinite(f.ticketEfectivo) ? f.ticketEfectivo : 0,
+    ticketTarjeta: Number.isFinite(f.ticketTarjeta) ? f.ticketTarjeta : 0,
+    totalRecuento: f.totalRecuento,
+    totalGastos: f.totalGastos
+  });
+  $("cTotalTicket").textContent = eur(r.ticketTotal);
+  $("cTotalContado").textContent = eur(r.totalRecuento);
+  $("cTotalGastos").textContent = eur(r.totalGastos);
+  $("cResumen").innerHTML = htmlResumen(r);
+  $("cEstado").className = "estado " + claseEstado(r.descuadre);
+  $("cEstado").textContent = textoDescuadre(r.descuadre);
+}
+
+function limpiarFormulario() {
+  $("cEfectivo").value = "";
+  $("cTarjeta").value = "";
+  document.querySelectorAll("#cRecuento input").forEach((i) => (i.value = ""));
+  $("cGastos").innerHTML = "";
+  $("cObs").value = "";
+  $("cPrueba").checked = false;
+  $("cFecha").value = fechaCajaHoy();
+  $("cAviso").innerHTML = "";
+  recalcular();
+}
+
+async function comprobarExistente() {
+  const fecha = $("cFecha").value;
+  $("cAviso").innerHTML = "";
+  if (!fecha) return;
+  try {
+    const s = await getDoc(doc(db, "cierres", fecha));
+    if (s.exists()) {
+      $("cAviso").innerHTML = `<div class="estado sobra" style="font-weight:400">Ya hay un cierre guardado para este día, hecho por ${esc(s.data().autorNombre)}.</div>`;
+    }
+  } catch (e) {
+    // Sin permiso para verlo: puede que exista o no. Se comprobará al guardar.
+  }
+}
+
+$("bGuardar").addEventListener("click", async () => {
+  limpiarMensaje();
+  const fecha = $("cFecha").value;
+  const f = leerFormulario();
+  const prueba = usuario.socio && $("cPrueba").checked;
+
+  if (!fecha) return mostrar("Falta el día de la caja.", "mal");
+  if (f.ticketEfectivo === null || f.ticketTarjeta === null) return mostrar("Rellena el efectivo y la tarjeta del ticket de cierre. Si no hay, pon 0.", "mal");
+  if (isNaN(f.ticketEfectivo) || isNaN(f.ticketTarjeta)) return mostrar("Revisa los importes del ticket: solo números, con coma para los céntimos.", "mal");
+  if (f.gastoMal) return mostrar("Revisa los gastos: cada uno necesita concepto e importe.", "mal");
+  if (f.totalRecuento === 0 && !confirm("No has contado ningún billete ni moneda. ¿Seguir de todas formas?")) return;
+
+  const r = calcular(f);
+  const pregunta = (prueba ? "CIERRE DE PRUEBA\n\n" : "") +
+    "¿Guardar el cierre del " + fechaLarga(fecha) + "?\n\n" +
+    "Resultado: " + textoDescuadre(r.descuadre) + "\n\n" +
+    "Una vez guardado no se puede modificar.";
+  if (!confirm(pregunta)) return;
+
+  const datos = {
+    fecha,
+    ticketEfectivo: r.ticketEfectivo,
+    ticketTarjeta: r.ticketTarjeta,
+    ticketTotal: r.ticketTotal,
+    recuento: f.recuento,
+    totalRecuento: r.totalRecuento,
+    fondo: FONDO,
+    gastos: f.gastos,
+    totalGastos: r.totalGastos,
+    deberiaHaber: r.deberiaHaber,
+    descuadre: r.descuadre,
+    aRetirar: r.aRetirar,
+    observaciones: $("cObs").value.trim(),
+    autorUid: usuario.uid,
+    autorNombre: usuario.nombre,
+    creadoEn: serverTimestamp(),
+    version: 1
+  };
+
+  $("bGuardar").disabled = true;
+  try {
+    if (prueba) {
+      await addDoc(collection(db, "pruebas"), datos);
+    } else {
+      if (usuario.socio) {
+        const s = await getDoc(doc(db, "cierres", fecha));
+        if (s.exists()) {
+          mostrar("Ya existe un cierre para ese día. Si hay que cambiar algo, hazlo con una corrección desde el historial.", "mal");
+          return;
+        }
+      }
+      await setDoc(doc(db, "cierres", fecha), datos);
+    }
+    $("hTitulo").textContent = prueba ? "Cierre de prueba guardado" : "Cierre guardado";
+    $("hResumen").innerHTML = `
+      <p style="color:var(--suave);margin-top:0">${esc(fechaLarga(fecha))}, hecho por ${esc(usuario.nombre)}</p>
+      <div class="resumen">
+        <div><span>Efectivo del ticket</span><strong>${eur(r.ticketEfectivo)}</strong></div>
+        <div><span>Tarjeta del ticket</span><strong>${eur(r.ticketTarjeta)}</strong></div>
+        <div><span>Total vendido</span><strong>${eur(r.ticketTotal)}</strong></div>
+        ${htmlResumen(r)}
+      </div>
+      <div class="estado ${claseEstado(r.descuadre)}">${textoDescuadre(r.descuadre)}</div>`;
+    limpiarFormulario();
+    ver("vHecho");
+  } catch (e) {
+    if (e.code === "permission-denied") {
+      mostrar("No se ha podido guardar: ya existe un cierre para ese día o no tienes permiso.", "mal");
+    } else {
+      mostrar("Error al guardar: " + e.message, "mal");
+    }
+  } finally {
+    $("bGuardar").disabled = false;
   }
 });
 
-$("btnProbar").addEventListener("click", async () => {
+$("bVolverCierre").addEventListener("click", () => { prepararCierre(); ver("vCierre"); });
+
+/* ===== HISTORIAL (solo socios) ===== */
+async function cargarHistorial() {
+  $("hLista").innerHTML = '<p style="color:var(--suave)">Cargando…</p>';
   try {
-    await addDoc(collection(db, "pruebas"), {
-      texto: "Prueba de conexión",
-      usuario: auth.currentUser.email,
-      fecha: serverTimestamp()
+    const [sc, sk] = await Promise.all([
+      getDocs(query(collection(db, "cierres"), orderBy("fecha", "desc"), limit(120))),
+      getDocs(collection(db, "correcciones"))
+    ]);
+    cacheCorr = {};
+    sk.forEach((d) => {
+      const c = { id: d.id, ...d.data() };
+      (cacheCorr[c.cierreId] ||= []).push(c);
     });
-    const datos = await getDocs(collection(db, "pruebas"));
-    mostrar("Todo funciona. Se ha guardado una prueba en la base de datos. Pruebas guardadas hasta ahora: " + datos.size + ".", "ok");
+    Object.values(cacheCorr).forEach((l) => l.sort((a, b) => ms(a.creadoEn) - ms(b.creadoEn)));
+    cacheCierres = [];
+    sc.forEach((d) => cacheCierres.push({ id: d.id, ...d.data() }));
+    pintarHistorial();
   } catch (e) {
-    const texto = e.code === "permission-denied"
-      ? "permiso denegado (revisar las reglas de Firestore)."
-      : e.message;
-    mostrar("Error con la base de datos: " + texto, "error");
+    $("hLista").innerHTML = "";
+    mostrar("No se ha podido cargar el historial: " + e.message, "mal");
+  }
+}
+
+// Valores con las correcciones aplicadas (la última corrección de cada campo es la que vale)
+function vigentes(c) {
+  const v = {
+    ticketEfectivo: c.ticketEfectivo,
+    ticketTarjeta: c.ticketTarjeta,
+    totalRecuento: c.totalRecuento,
+    totalGastos: c.totalGastos
+  };
+  (cacheCorr[c.id] || []).forEach((k) => { if (k.campo in v) v[k.campo] = k.valorNuevo; });
+  return calcular(v);
+}
+
+function pintarHistorial() {
+  if (!cacheCierres.length) {
+    $("hLista").innerHTML = '<div class="panel">Todavía no hay cierres guardados. El primero aparecerá aquí en cuanto se haga.</div>';
+    return;
+  }
+  const semanas = {};
+  cacheCierres.forEach((c) => { (semanas[lunesDe(c.fecha)] ||= []).push(c); });
+  let html = "";
+  Object.keys(semanas).sort().reverse().forEach((lunes) => {
+    const t = { ef: 0, tj: 0, g: 0, d: 0 };
+    const items = semanas[lunes].map((c) => {
+      const v = vigentes(c);
+      t.ef += v.ticketEfectivo; t.tj += v.ticketTarjeta; t.g += v.totalGastos; t.d += v.descuadre;
+      const corregido = (cacheCorr[c.id] || []).length > 0;
+      return `
+        <button class="item" data-id="${esc(c.id)}">
+          <div class="top"><span>${esc(fechaLarga(c.fecha))}${corregido ? '<span class="etiqueta">corregido</span>' : ""}</span><span>${eur(v.ticketTotal)}</span></div>
+          <div class="sub"><span>${esc(c.autorNombre)}, gastos ${eur(v.totalGastos)}</span><span class="${claseDescuadre(v.descuadre)}">${textoDescuadre(v.descuadre)}</span></div>
+        </button>`;
+    }).join("");
+    html += `
+      <div class="semana">
+        <h3>Semana del ${esc(fechaLarga(lunes))}</h3>
+        <div class="panel resumen" style="padding:6px 14px">
+          <div><span>Efectivo</span><strong>${eur(t.ef)}</strong></div>
+          <div><span>Tarjeta</span><strong>${eur(t.tj)}</strong></div>
+          <div><span>Total vendido</span><strong>${eur(t.ef + t.tj)}</strong></div>
+          <div><span>Gastos</span><strong>${eur(t.g)}</strong></div>
+          <div><span>Descuadre de la semana</span><strong class="${claseDescuadre(t.d)}">${t.d === 0 ? "0,00 €" : eurSigno(t.d)}</strong></div>
+        </div>
+        ${items}
+      </div>`;
+  });
+  $("hLista").innerHTML = html;
+}
+$("hLista").addEventListener("click", (e) => {
+  const b = e.target.closest(".item");
+  if (b) abrirDetalle(b.dataset.id);
+});
+$("bRecargar").addEventListener("click", cargarHistorial);
+
+/* ===== DETALLE Y CORRECCIONES (solo socios) ===== */
+function abrirDetalle(id) {
+  const c = cacheCierres.find((x) => x.id === id);
+  if (!c) return;
+  detalleActual = c;
+  limpiarMensaje();
+  const corrs = cacheCorr[id] || [];
+  const original = calcular(c);
+
+  const filasRecuento = BILLETES
+    .filter((b) => (c.recuento?.[b] || 0) > 0)
+    .map((b) => `<div><span>${c.recuento[b]} × ${etiquetaBillete(b)}</span><strong>${eur(c.recuento[b] * b)}</strong></div>`)
+    .join("") || "<div><span>Sin recuento</span></div>";
+  const filasGastos = (c.gastos || [])
+    .map((g) => `<div><span>${esc(g.concepto)}${g.persona ? " (" + esc(g.persona) + ")" : ""}</span><strong>${eur(g.importe)}</strong></div>`)
+    .join("") || "<div><span>Sin gastos</span></div>";
+
+  let html = `
+    <div class="panel">
+      <h2>${esc(fechaLarga(c.fecha))}</h2>
+      <p style="color:var(--suave);margin:0">Hecho por ${esc(c.autorNombre)}, guardado el ${esc(horaDe(c.creadoEn))}</p>
+    </div>
+    <div class="panel"><h2>Ticket de cierre</h2><div class="resumen">
+      <div><span>Efectivo</span><strong>${eur(c.ticketEfectivo)}</strong></div>
+      <div><span>Tarjeta</span><strong>${eur(c.ticketTarjeta)}</strong></div>
+      <div><span>Total</span><strong>${eur(c.ticketTotal)}</strong></div>
+    </div></div>
+    <div class="panel"><h2>Recuento</h2><div class="resumen">${filasRecuento}
+      <div><span>Total contado</span><strong>${eur(c.totalRecuento)}</strong></div>
+    </div></div>
+    <div class="panel"><h2>Gastos</h2><div class="resumen">${filasGastos}
+      <div><span>Total gastos</span><strong>${eur(c.totalGastos)}</strong></div>
+    </div></div>
+    <div class="panel"><h2>Resultado original</h2>
+      <div class="resumen">${htmlResumen(original)}</div>
+      <div class="estado ${claseEstado(original.descuadre)}">${textoDescuadre(original.descuadre)}</div>
+      ${c.observaciones ? `<p style="margin-bottom:0"><strong>Observaciones:</strong> ${esc(c.observaciones)}</p>` : ""}
+    </div>`;
+
+  if (corrs.length) {
+    const v = vigentes(c);
+    html += `
+      <div class="panel"><h2>Correcciones</h2>
+        ${corrs.map((k) => `
+          <div class="item">
+            <div class="top"><span>${esc(CAMPOS[k.campo] || k.campo)}</span><span>${k.campo === "nota" ? "" : eur(k.valorAnterior) + " a " + eur(k.valorNuevo)}</span></div>
+            <div class="sub"><span>${esc(k.autorNombre)}, ${esc(horaDe(k.creadoEn))}</span></div>
+            <p style="margin:6px 0 0">${esc(k.motivo)}</p>
+          </div>`).join("")}
+      </div>
+      <div class="panel"><h2>Resultado con correcciones</h2>
+        <div class="resumen">${htmlResumen(v)}</div>
+        <div class="estado ${claseEstado(v.descuadre)}">${textoDescuadre(v.descuadre)}</div>
+      </div>`;
+  }
+
+  $("dContenido").innerHTML = html;
+  $("dCampo").value = "ticketEfectivo";
+  $("dValor").value = "";
+  $("dMotivo").value = "";
+  actualizarCampo();
+  ver("vDetalle");
+  window.scrollTo(0, 0);
+}
+
+function actualizarCampo() {
+  const campo = $("dCampo").value;
+  const esNota = campo === "nota";
+  $("dValorCaja").classList.toggle("oculto", esNota);
+  $("dActual").textContent = (!esNota && detalleActual) ? "Valor actual: " + eur(vigentes(detalleActual)[campo]) : "";
+}
+$("dCampo").addEventListener("change", actualizarCampo);
+$("bVolverHist").addEventListener("click", () => { limpiarMensaje(); ver("vHistorial"); });
+
+$("bCorregir").addEventListener("click", async () => {
+  if (!detalleActual) return;
+  const campo = $("dCampo").value;
+  const motivo = $("dMotivo").value.trim();
+  if (!motivo) return mostrar("Escribe el motivo de la corrección.", "mal");
+
+  const datos = {
+    cierreId: detalleActual.id,
+    fechaCierre: detalleActual.fecha,
+    campo,
+    motivo,
+    autorUid: usuario.uid,
+    autorNombre: usuario.nombre,
+    creadoEn: serverTimestamp()
+  };
+  if (campo !== "nota") {
+    const actual = vigentes(detalleActual)[campo];
+    const nuevo = leerEur($("dValor").value);
+    if (nuevo === null || isNaN(nuevo)) return mostrar("Escribe el valor correcto en euros.", "mal");
+    if (nuevo === actual) return mostrar("El valor nuevo es igual al actual.", "mal");
+    datos.valorAnterior = actual;
+    datos.valorNuevo = nuevo;
+  }
+  if (!confirm("¿Guardar esta corrección? Quedará registrada con tu nombre y no se puede borrar.")) return;
+
+  $("bCorregir").disabled = true;
+  try {
+    await addDoc(collection(db, "correcciones"), datos);
+    const id = detalleActual.id;
+    await cargarHistorial();
+    abrirDetalle(id);
+    mostrar("Corrección guardada.", "ok");
+  } catch (e) {
+    mostrar("No se ha podido guardar la corrección: " + e.message, "mal");
+  } finally {
+    $("bCorregir").disabled = false;
   }
 });
 
-$("btnSalir").addEventListener("click", async () => {
-  await signOut(auth);
-  mostrar("Sesión cerrada.", "ok");
+/* ===== CAMBIAR CONTRASEÑA ===== */
+$("bCambiarClave").addEventListener("click", async () => {
+  const actual = $("kActual").value;
+  const nueva = $("kNueva").value;
+  if (nueva.length < 6) return mostrar("La contraseña nueva debe tener al menos 6 caracteres.", "mal");
+  if (nueva !== $("kRepite").value) return mostrar("Las dos contraseñas nuevas no coinciden.", "mal");
+  try {
+    const u = auth.currentUser;
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, actual));
+    await updatePassword(u, nueva);
+    ["kActual", "kNueva", "kRepite"].forEach((i) => ($(i).value = ""));
+    mostrar("Contraseña cambiada. Úsala la próxima vez que entres.", "ok");
+  } catch (e) {
+    mostrar("No se ha podido cambiar: " + traducirError(e.code), "mal");
+  }
 });
 </script>
 </body>
