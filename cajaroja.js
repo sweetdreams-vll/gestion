@@ -8,7 +8,7 @@
 import {
   db, estado, ICONOS, $, esc, eur, eurSigno, leerEur, mostrar, traducirError,
   ms, iso, vigentes, claseDescuadre, textoDescuadre
-} from "./nucleo.js?v=4";
+} from "./nucleo.js?v=2";
 import {
   collection, doc, getDocs, setDoc, updateDoc, query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
