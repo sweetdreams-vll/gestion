@@ -18,7 +18,7 @@ const CATEGORIAS = {
   otros: "Otros"
 };
 const ORDEN_CAT = Object.keys(CATEGORIAS);
-const UNIDADES = ["botella", "botellín", "lata", "garrafa", "bolsa", "unidad", "caja", "kg"];
+const UNIDADES = ["botella", "botellín", "lata", "barril", "garrafa", "bolsa", "unidad", "caja", "kg"];
 const FRACCIONES = [[0, "Nada abierto"], [0.25, "+ ¼ abierta"], [0.5, "+ ½ abierta"], [0.75, "+ ¾ abierta"]];
 const DIAS_FACTURAS = 120;
 
@@ -53,10 +53,12 @@ export const moduloStock = {
   const s = document.createElement("style");
   s.id = "css-stock";
   s.textContent = `
-    .fr { display:grid; grid-template-columns:1fr 88px; gap:8px; align-items:center; padding:10px 0; border-bottom:1px solid var(--borde); }
+    .fr { padding:10px 0; border-bottom:1px solid var(--borde); }
     .fr:last-child { border-bottom:none; }
-    .fr.abre { grid-template-columns:1fr 70px 112px; }
-    .fr small { display:block; color:var(--suave); font-size:.8rem; margin-top:2px; }
+    .fr-nombre small, .fr-total { display:block; color:var(--suave); font-size:.8rem; margin-top:2px; }
+    .fr-campos { display:grid; grid-template-columns:repeat(auto-fit, minmax(90px, 1fr)); gap:8px; margin-top:6px; }
+    .fr-campos label { margin:0; font-size:.75rem; }
+    .fr-campos input, .fr-campos select { margin-top:4px; }
     .fr select { padding:12px 6px; font-size:.9rem; }
     .badge { display:inline-block; font-size:.75rem; padding:2px 8px; border-radius:20px; margin-left:6px; font-weight:400; }
     .badge.bajo, .badge.revisar { background:var(--rojoF); }
@@ -105,13 +107,46 @@ function adivinarCategoria(t) {
   if (/\b(COCA|KAS|FANTA|SPRITE|SCHWEPPES|TONICA|REFRESCO|AGUA|ZUMO|BEBIDA|RED ?BULL|POWERKING|AQUARIUS|NESTEA|LIMON|NARANJA|SODA|GASEOSA)/.test(x)) return "refresco";
   return "otros";
 }
-function adivinarFactor(t) {
-  const m = norm(t).match(/(\d+)\s*(UNDS?|UDS?|UNIDADES|U)\b/);
-  return m ? Number(m[1]) : 1;
+// Unidades que trae cada caja según el texto de la factura: C24, *35, 24 x 1/3, BOLSA 25 UNDS, PACK 6…
+function detectarPack(t) {
+  const x = norm(t);
+  const pruebas = [
+    /\bC\s?(\d{1,3})\b/,
+    /\*\s?(\d{1,3})\b/,
+    /\b(\d{1,3})\s*X\s*\d+\s*\/\s*\d+/,
+    /\b(\d{1,3})\s*X\s*\d+\s*(CL|ML|L)\b/,
+    /(\d{1,4})\s*(UNDS?|UDS?|UNIDADES)\b/,
+    /\bPACK\s*(\d{1,3})\b/
+  ];
+  for (const r of pruebas) {
+    const m = x.match(r);
+    if (m && Number(m[1]) > 1) return Number(m[1]);
+  }
+  return 1;
 }
+// Clave para reconocer una línea de factura: la línea de regalo cuenta como el mismo producto
+function claveAlias(t) {
+  return norm(t).replace(/\s*(REGALO|SIN CARGO|GRATIS)\s*$/, "").trim();
+}
+// Nombre del producto a partir de la línea de factura, sin «CAJA» ni el formato de la caja
 function nombreBonito(t) {
-  const s = String(t || "").trim().toLowerCase();
+  let s = norm(t)
+    .replace(/\s*(REGALO|SIN CARGO|GRATIS)\s*$/, "")
+    .replace(/^(CAJA|CJ|PACK|BANDEJA|FARDO)\s+/, "")
+    .replace(/\s*\bC\s?\d{1,3}\b\.?/, "")
+    .replace(/\s*\*\s?\d{1,3}\b/, "")
+    .replace(/\s*\b\d{1,3}\s*X\s*(\d+\s*\/\s*\d+)/, " $1")
+    .replace(/\s+/g, " ").trim().toLowerCase();
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+// Muestra una cantidad en cajas y sueltas si el producto viene en cajas
+function fmtCajas(p, n) {
+  if (n === null || n === undefined) return "—";
+  const pack = p.pack && p.pack > 1 ? p.pack : 0;
+  if (!pack || n < pack) return fmt(n);
+  const cajas = Math.floor(n / pack);
+  const sueltas = Math.round((n - cajas * pack) * 100) / 100;
+  return `${fmt(n)} (${cajas} caja${cajas > 1 ? "s" : ""}${sueltas ? " + " + fmt(sueltas) : ""})`;
 }
 
 // ---------- Datos ----------
@@ -141,29 +176,38 @@ async function cargarTodo() {
 
   // Qué texto de factura corresponde a qué producto
   const alias = new Map();
-  productos.forEach((p) => (p.alias || []).forEach((a) => alias.set(a.t, { p, f: a.f || 1 })));
+  productos.forEach((p) => (p.alias || []).forEach((a) => alias.set(claveAlias(a.t), { p, f: a.f || 1 })));
 
   const entradas = {};
   const sinAsignar = new Map();
-  facturas.forEach((f) => (f.lineas || []).forEach((l) => {
-    const t = norm(l.descripcion);
+  facturas.forEach((f) => {
+    // La factura de un albarán ya registrado no vuelve a sumar: el producto entró con el albarán
+    if (f.albaranId) return;
+    (f.lineas || []).forEach((l) => {
+    const t = claveAlias(l.descripcion);
     if (!t) return;
     const a = alias.get(t);
     if (a) {
       const cant = Number(l.cantidad) || 0;
-      const costeFactura = typeof l.precio === "number" ? l.precio * 100 : (cant ? (l.importe || 0) / cant : null);
+      const bulto = Number(l.bulto) || 1;
+      // Coste real por unidad: importe neto (con descuentos) entre las unidades; los regalos suman sin coste
+      let coste = null;
+      if (!l.regalo) {
+        if (typeof l.importe === "number" && l.importe > 0 && cant) coste = Math.round(l.importe / (cant * bulto) / a.f);
+        else if (typeof l.precio === "number") coste = Math.round(l.precio * 100 / bulto / a.f);
+      }
       (entradas[a.p.id] ||= []).push({
-        fecha: f.fecha, uds: cant * a.f,
-        coste: costeFactura === null ? null : Math.round(costeFactura / a.f),
+        fecha: f.fecha, uds: cant * bulto * a.f, coste,
         proveedor: f.proveedorNombre
       });
     } else if (!ignorados.has(t)) {
-      const x = sinAsignar.get(t) || { t, texto: l.descripcion, veces: 0, proveedor: f.proveedorNombre, ultima: f.fecha, precio: l.precio };
+      const x = sinAsignar.get(t) || { t, texto: l.descripcion, veces: 0, proveedor: f.proveedorNombre, ultima: f.fecha, precio: l.precio, bulto: Number(l.bulto) || 1 };
       x.veces++;
       if (f.fecha >= x.ultima) { x.ultima = f.fecha; x.precio = l.precio; x.proveedor = f.proveedorNombre; }
       sinAsignar.set(t, x);
     }
-  }));
+    });
+  });
 
   // Para cada producto: último recuento, anterior, entradas, stock teórico, consumo y coste
   const info = {};
@@ -270,13 +314,19 @@ async function pintarRecuento(cont) {
   }
 
   const fila = (p) => {
-    const b = borradorRecuento[p.id] || { enteras: "", fraccion: 0 };
-    const previo = antes[p.id] ? ` · antes ${fmt(antes[p.id].c)} (${fechaCorta(antes[p.id].fecha)})` : "";
+    const b = borradorRecuento[p.id] || { cajas: "", enteras: "", fraccion: 0 };
+    const conCajas = p.pack && p.pack > 1;
+    const previo = antes[p.id] ? `Antes: ${fmtCajas(p, antes[p.id].c)} (${fechaCorta(antes[p.id].fecha)})` : "";
+    const plural = esc(unidadTexto(p, 2));
     return `
-      <div class="fr ${p.seAbre ? "abre" : ""}" data-id="${esc(p.id)}">
-        <div>${esc(p.nombre)}<small>${esc(p.formato || "")}${p.formato ? " · " : ""}${p.seAbre ? esc(unidadTexto(p, 2)) + " cerradas" : "en " + esc(unidadTexto(p, 2))}${previo}</small></div>
-        <input class="rEnteras" inputmode="decimal" placeholder="—" value="${esc(b.enteras)}" aria-label="${esc(p.nombre)}">
-        ${p.seAbre ? `<select class="rFraccion" aria-label="Botella abierta de ${esc(p.nombre)}">${FRACCIONES.map(([v, t]) => `<option value="${v}" ${v === b.fraccion ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}
+      <div class="fr" data-id="${esc(p.id)}">
+        <div class="fr-nombre">${esc(p.nombre)}<small>${esc(p.formato || "")}${p.formato && previo ? " · " : ""}${esc(previo)}</small></div>
+        <div class="fr-campos">
+          ${conCajas ? `<label>Cajas de ${p.pack}<input class="rCajas" inputmode="numeric" placeholder="—" value="${esc(b.cajas || "")}"></label>` : ""}
+          <label>${conCajas ? plural + " sueltos" : p.seAbre ? plural + " cerradas" : plural}<input class="rEnteras" inputmode="decimal" placeholder="—" value="${esc(b.enteras)}"></label>
+          ${p.seAbre ? `<label>Abierta<select class="rFraccion">${FRACCIONES.map(([v, t]) => `<option value="${v}" ${v === b.fraccion ? "selected" : ""}>${t}</option>`).join("")}</select></label>` : ""}
+        </div>
+        <small class="fr-total"></small>
       </div>`;
   };
 
@@ -294,14 +344,29 @@ async function pintarRecuento(cont) {
       <small class="nota">Un recuento guardado no se puede modificar. Si te equivocas, haz otro recuento de ese producto: siempre manda el último.</small>
     </div>`;
 
+  const totalDe = (p, b) => {
+    if (!b) return null;
+    const hayCajas = String(b.cajas || "").trim() !== "";
+    const haySueltas = String(b.enteras || "").trim() !== "";
+    if (!hayCajas && !haySueltas && !b.fraccion) return null;
+    const cajas = hayCajas ? num(b.cajas) : 0;
+    const sueltas = haySueltas ? num(b.enteras) : 0;
+    if (cajas === null || sueltas === null || cajas < 0 || sueltas < 0) return NaN;
+    return Math.round((cajas * (p.pack || 1) + sueltas + (b.fraccion || 0)) * 100) / 100;
+  };
   cont.querySelectorAll(".fr").forEach((f) => {
     const id = f.dataset.id;
+    const p = productos.find((x) => x.id === id);
     const actualizar = () => {
       borradorRecuento[id] = {
+        cajas: f.querySelector(".rCajas") ? f.querySelector(".rCajas").value : "",
         enteras: f.querySelector(".rEnteras").value,
         fraccion: f.querySelector(".rFraccion") ? Number(f.querySelector(".rFraccion").value) : 0
       };
+      const t = totalDe(p, borradorRecuento[id]);
+      f.querySelector(".fr-total").textContent = t === null ? "" : isNaN(t) ? "Revisa los números" : p.pack > 1 ? `Total: ${fmt(t)} ${unidadTexto(p, t)}` : "";
     };
+    actualizar();
     f.addEventListener("input", actualizar);
     f.addEventListener("change", actualizar);
   });
@@ -311,11 +376,10 @@ async function pintarRecuento(cont) {
     const lineas = {};
     let mal = null;
     productos.forEach((p) => {
-      const b = borradorRecuento[p.id];
-      if (!b || (String(b.enteras).trim() === "" && !b.fraccion)) return;
-      const enteras = String(b.enteras).trim() === "" ? 0 : num(b.enteras);
-      if (enteras === null || enteras < 0) { mal = p.nombre; return; }
-      lineas[p.id] = Math.round((enteras + (b.fraccion || 0)) * 100) / 100;
+      const t = totalDe(p, borradorRecuento[p.id]);
+      if (t === null) return;
+      if (isNaN(t)) { mal = p.nombre; return; }
+      lineas[p.id] = t;
     });
     if (mal) return mostrar("Revisa la cantidad de «" + mal + "».", "mal");
     const n = Object.keys(lineas).length;
@@ -371,8 +435,8 @@ async function pintarEstado(cont) {
           const i = d.info[p.id];
           const bajo = esBajo(p, i);
           return `<div><span>${esc(p.nombre)}${bajo ? '<span class="badge bajo">bajo</span>' : ""}
-              <small class="suave" style="display:block;font-size:.8rem">${i.ultimo ? `Contado ${fmt(i.ultimo.cant)} el ${esc(fechaCorta(i.ultimo.fecha))}${i.entradasDesde ? `, han entrado ${fmt(i.entradasDesde)}` : ""}` : "Sin recontar"}${typeof p.minimo === "number" ? ` · mínimo ${fmt(p.minimo)}` : ""}</small></span>
-            <strong>${i.teorico === null ? "—" : fmt(i.teorico)}</strong></div>`;
+              <small class="suave" style="display:block;font-size:.8rem">${i.ultimo ? `Contado ${fmtCajas(p, i.ultimo.cant)} el ${esc(fechaCorta(i.ultimo.fecha))}${i.entradasDesde ? `, han entrado ${fmt(i.entradasDesde)}` : ""}` : "Sin recontar"}${typeof p.minimo === "number" ? ` · mínimo ${fmt(p.minimo)}` : ""}</small></span>
+            <strong>${i.teorico === null ? "—" : fmtCajas(p, i.teorico)}</strong></div>`;
         }).join("")}
       </div></div>`).join("")}`;
 }
@@ -488,13 +552,13 @@ async function pintarProductos(cont) {
     ${d.sinAsignar.length ? `
       <div class="panel">
         <h2>Productos de facturas sin asignar (${d.sinAsignar.length})</h2>
-        <p class="suave" style="margin-top:0;line-height:1.5">Dile a la app qué es cada línea de las facturas. Solo hay que hacerlo una vez: las próximas facturas lo reconocerán solas. «Unidades por cada una» sirve, por ejemplo, para una bolsa de 25 vasos (pon 25). Lo que no quieras controlar, ignóralo.</p>
+        <p class="suave" style="margin-top:0;line-height:1.5">Dile a la app qué es cada línea de las facturas. Solo hay que hacerlo una vez: las próximas facturas lo reconocerán solas. El producto es la unidad que se vende y se cuenta (el tercio, la botella de agua, el vaso), no la caja. En el número de al lado pon cuántas unidades trae cada línea de la factura: una caja de 24 tercios = 24. Si la factura ya indica las unidades por caja, deja 1. Lo que no quieras controlar, ignóralo.</p>
         ${d.sinAsignar.slice(0, 40).map((x, k) => `
           <div class="asignar" data-k="${k}">
-            <div><strong>${esc(x.texto)}</strong><small class="suave" style="display:block">${esc(x.proveedor || "")}${typeof x.precio === "number" ? ` · ${esc(fmt(x.precio))} € sin IVA` : ""} · ${x.veces} vez${x.veces > 1 ? "es" : ""}</small></div>
+            <div><strong>${esc(x.texto)}</strong><small class="suave" style="display:block">${esc(x.proveedor || "")}${x.bulto > 1 ? ` · la factura ya dice ${x.bulto} uds/caja` : ""} · ${x.veces} vez${x.veces > 1 ? "es" : ""}</small><small class="suave" style="display:block">Se creará: «${esc(nombreBonito(x.texto))}»${x.bulto > 1 || detectarPack(x.texto) > 1 ? `, en cajas de ${x.bulto > 1 ? x.bulto : detectarPack(x.texto)}` : ""}</small></div>
             <div class="dos" style="margin-top:8px">
               <select class="aProd"><option value="__nuevo">Crear producto nuevo</option>${opciones}</select>
-              <input class="aFactor" inputmode="decimal" value="${adivinarFactor(x.texto)}" aria-label="Unidades por cada una">
+              <input class="aFactor" inputmode="decimal" value="${x.bulto > 1 ? 1 : detectarPack(x.texto)}" aria-label="Unidades por cada línea de factura">
             </div>
             <div class="fila">
               <button class="aAsignar" type="button">Asignar</button>
@@ -521,13 +585,20 @@ async function pintarProductos(cont) {
       try {
         if (prodId === "__nuevo") {
           const cat = adivinarCategoria(x.texto);
+          const pack = x.bulto > 1 ? x.bulto : detectarPack(x.texto);
+          const grande = /\b(2|1[,.]5|1)\s*L(ITROS?)?\b/.test(norm(x.texto));
+          const unidad = cat === "alcohol" || cat === "sirope" ? "botella"
+            : cat === "desechable" ? "unidad"
+            : cat === "cerveza" ? (/BARRIL/.test(norm(x.texto)) ? "barril" : /LATA/.test(norm(x.texto)) ? "lata" : "botellín")
+            : cat === "refresco" ? (/LATA/.test(norm(x.texto)) ? "lata" : grande ? "botella" : "botellín")
+            : "unidad";
           await setDoc(doc(collection(db, "productos")), {
             nombre: nombreBonito(x.texto),
             categoria: cat,
-            unidad: cat === "alcohol" || cat === "sirope" ? "botella" : cat === "desechable" ? "unidad" : "botella",
+            unidad,
             formato: "",
             seAbre: cat === "alcohol" || cat === "sirope",
-            minimo: null, ideal: null, pack: null,
+            minimo: null, ideal: null, pack: pack > 1 ? pack : null,
             proveedor: x.proveedor || "",
             alias: [{ t: x.t, f: factor }],
             activo: true,
@@ -654,4 +725,3 @@ async function pintarFichaProducto(cont, id) {
       mostrar("No se ha podido quitar: " + traducirError(e.code || e.message), "mal");
     }
   }));
-}
