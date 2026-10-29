@@ -17,7 +17,7 @@ import {
 import { moduloCaja } from "./caja.js?v=4";
 import { moduloStock } from "./stock.js?v=1";
 import { moduloCompras } from "./compras.js?v=4";
-import { moduloCajaRoja } from "./cajaroja.js?v=4";
+import { moduloCajaRoja } from "./cajaroja.js?v=5";
 
 // ---------- Módulos ----------
 // Para añadir un módulo nuevo: importarlo arriba y añadirlo a esta lista.
