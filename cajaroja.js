@@ -63,7 +63,7 @@ const DIAS_SEMANA = ["L", "M", "X", "J", "V", "S", "D"];
     .mov .sub { display:flex; justify-content:space-between; gap:8px; color:var(--suave); font-size:.82rem; margin-top:3px; }
     .mov.anulado { opacity:.5; }
     .mov.anulado .top span:first-child { text-decoration:line-through; }
-    .mov.recuento { background:var(--panel2); border-radius:10px; padding:10px; margin:6px 0; border-bottom:none; }
+    .mov.conteo { background:var(--panel2); border-radius:10px; padding:10px; margin:6px 0; border-bottom:none; }
   `;
   document.head.appendChild(s);
 })();
@@ -150,7 +150,7 @@ function filaEvento(ev, conFecha = true) {
   const cuando = conFecha ? fechaHora(ev.cuando) : horaTexto(ev.cuando);
   if (ev.tipo === "recuento") {
     return `
-      <div class="mov recuento">
+      <div class="mov conteo">
         <div class="top"><strong>${esc(ev.texto)}: ${eur(ev.importe)}</strong><span class="${ev.diferencia === null ? "" : claseDescuadre(ev.diferencia)}">${ev.diferencia === null ? "Primer recuento" : textoDescuadre(ev.diferencia)}</span></div>
         <div class="sub"><span>${esc(cuando)}, ${esc(ev.quien || "")}</span><span>${ev.esperado === null ? "" : "Debería haber " + eur(ev.esperado)}</span></div>
       </div>`;
