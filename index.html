@@ -17,7 +17,25 @@
   }
   body:has(#lUsuario) .logo { display: block; }
   body:has(#lUsuario) header { display: none; }
+  .carga.error { padding: 30vh 20px 0; color: #ff8a8a; line-height: 1.5; word-break: break-word; }
 </style>
+<script>
+  // Si algún archivo falla al cargar, se muestra el motivo en vez de «Cargando…»
+  function mostrarFalloCarga(texto) {
+    var c = document.getElementById("carga");
+    if (!c || c.classList.contains("oculto")) return;
+    c.classList.add("error");
+    c.textContent = "La app no ha podido arrancar. Manda una captura de esto: " + texto;
+  }
+  window.addEventListener("error", function (e) {
+    var archivo = (e.filename || "").split("/").pop();
+    mostrarFalloCarga((e.message || "error") + (archivo ? " (" + archivo + ", línea " + e.lineno + ")" : ""));
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    mostrarFalloCarga(String((e.reason && e.reason.message) || e.reason));
+  });
+  setTimeout(function () { mostrarFalloCarga("tarda demasiado. Comprueba la conexión y recarga."); }, 20000);
+</script>
 </head>
 <body>
   <div id="carga" class="carga">Cargando…</div>
@@ -36,6 +54,6 @@
 
   <nav id="barra" class="barra oculto"></nav>
 
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=9"></script>
 </body>
 </html>
