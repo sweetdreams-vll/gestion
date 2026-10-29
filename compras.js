@@ -6,7 +6,7 @@
 import {
   db, estado, ICONOS, $, esc, eur, leerEur, centimosATexto, mostrar, traducirError,
   horaDe, iso
-} from "./nucleo.js?v=4";
+} from "./nucleo.js?v=2";
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch, query, where, orderBy, limit, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
