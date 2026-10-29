@@ -725,3 +725,4 @@ async function pintarFichaProducto(cont, id) {
       mostrar("No se ha podido quitar: " + traducirError(e.code || e.message), "mal");
     }
   }));
+}
