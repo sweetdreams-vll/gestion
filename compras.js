@@ -1,7 +1,7 @@
 // =============================================================
-// MÓDULO COMPRAS (versión 3): facturas y albaranes con lectura automática por IA,
+// MÓDULO COMPRAS (versión 4): facturas y albaranes con lectura automática por IA,
 // descuentos, unidades por caja, regalos, cargos extra (punto verde, GTR…),
-// albaranes que esperan su factura, pagos pendientes y proveedores.
+// albaranes que esperan su factura, pagos mixtos (efectivo + tarjeta), pendientes y proveedores.
 // =============================================================
 import {
   db, estado, ICONOS, $, esc, eur, leerEur, centimosATexto, mostrar, traducirError,
@@ -229,7 +229,8 @@ function borradorVacio() {
     cargos: [],               // { concepto, importe (céntimos), iva }
     basesPapel: null,         // bases e IVA tal como vienen impresos (para comprobar)
     totalFactura: null,       // total que pone el papel (céntimos)
-    formaPago: "",            // cajaRoja | banco | pendiente | conFactura
+    formaPago: "",            // cajaRoja | banco | mixto | pendiente | conFactura
+    efectivoMixto: "",        // en pago mixto: lo pagado en efectivo de la caja roja (texto en €)
     albaranId: "",            // si es la factura de un albarán ya registrado
     observaciones: "",
     leidaConIA: false
@@ -332,7 +333,13 @@ async function pintarNueva(cont) {
         ${esAlb ? `<label><input type="radio" name="nPago" value="conFactura" ${b.formaPago === "conFactura" ? "checked" : ""}> Se pagará con la factura</label>` : ""}
         <label><input type="radio" name="nPago" value="cajaRoja" ${b.formaPago === "cajaRoja" ? "checked" : ""}> Pagado en efectivo con la caja roja</label>
         <label><input type="radio" name="nPago" value="banco" ${b.formaPago === "banco" ? "checked" : ""}> Ya pagado por banco o tarjeta</label>
+        <label><input type="radio" name="nPago" value="mixto" ${b.formaPago === "mixto" ? "checked" : ""}> Pago mixto: una parte en efectivo de la caja roja y el resto con tarjeta o banco</label>
         ${!esAlb ? `<label><input type="radio" name="nPago" value="pendiente" ${b.formaPago === "pendiente" ? "checked" : ""}> Pendiente de pago (giro, recibo, transferencia)</label>` : ""}
+      </div>
+      <div id="nMixtoCaja" class="${b.formaPago === "mixto" ? "" : "oculto"}">
+        <label for="nEfectivoMixto">Pagado en efectivo de la caja roja (€)</label>
+        <input id="nEfectivoMixto" inputmode="decimal" data-campo="efectivoMixto" value="${esc(b.efectivoMixto)}" placeholder="0,00">
+        <small class="nota" id="nRestoMixto"></small>
       </div>
       <div id="nVencCaja" class="${b.formaPago === "pendiente" ? "" : "oculto"}">
         <label for="nVenc">Fecha prevista de pago</label>
@@ -391,6 +398,7 @@ function alEscribir(e, cont) {
   if (t.name === "nPago") {
     borrador.formaPago = t.value;
     $("nVencCaja").classList.toggle("oculto", t.value !== "pendiente");
+    $("nMixtoCaja").classList.toggle("oculto", t.value !== "mixto");
     if (t.value === "pendiente" && !borrador.vencimiento) { borrador.vencimiento = sumarDias(borrador.fecha, 7); $("nVenc").value = borrador.vencimiento; }
     actualizarTotales();
     return;
@@ -520,9 +528,15 @@ function actualizarTotales() {
   }
   const total = borrador.totalFactura ?? t.total;
   const alb = albaranesPendientes.find((a) => a.id === borrador.albaranId);
+  const efectivo = borrador.formaPago === "cajaRoja" ? total : borrador.formaPago === "mixto" ? (cent(borrador.efectivoMixto) || 0) : 0;
+  if ($("nRestoMixto")) {
+    $("nRestoMixto").textContent = borrador.formaPago === "mixto"
+      ? (efectivo > 0 && efectivo < total ? `El resto, ${eur(total - efectivo)}, con tarjeta o banco.` : "Escribe cuánto se pagó en efectivo; tiene que ser menos que el total.")
+      : "";
+  }
   let avisoPago = "";
-  if (alb && alb.estado === "pagada") avisoPago = `<div class="estado ok" style="font-weight:400">El albarán ya se pagó (${alb.pagadaDesde === "cajaRoja" ? "caja roja" : "banco"}): esta factura quedará como pagada y no se descontará otra vez.</div>`;
-  else if (borrador.formaPago === "cajaRoja" && total >= LIMITE_EFECTIVO) avisoPago = `<div class="estado mal" style="font-weight:400">Atención: entre empresas no se puede pagar en efectivo una operación de 1.000 € o más. Mejor por banco.</div>`;
+  if (alb && alb.estado === "pagada") avisoPago = `<div class="estado ok" style="font-weight:400">El albarán ya se pagó: esta factura quedará como pagada y no se descontará otra vez.</div>`;
+  else if (efectivo >= LIMITE_EFECTIVO) avisoPago = `<div class="estado mal" style="font-weight:400">Atención: entre empresas no se puede pagar en efectivo una operación de 1.000 € o más. Mejor por banco.</div>`;
   $("nAvisoPago").innerHTML = avisoPago;
 }
 
@@ -658,7 +672,7 @@ function mensajeErrorIA(e) {
 
 const INSTRUCCIONES_IA = `Eres un asistente que lee facturas y albaranes de proveedores de un bar en España (Sweet Dreams, CIF E47761556).
 Devuelve SOLO un objeto JSON, sin texto adicional, con esta forma:
-{"tipo":"factura","proveedor":{"nombre":"","cif":"","telefono":"","email":""},"numero":"","fecha":"AAAA-MM-DD","formaPago":"","vencimiento":"","lineas":[{"descripcion":"","cantidad":0,"unidadesPorBulto":1,"precioUnitario":0,"descuento":0,"importe":0,"iva":21,"regalo":false}],"cargos":[{"concepto":"","importe":0,"iva":21}],"impuestos":[{"tipoIva":21,"base":0,"cuota":0}],"total":0}
+{"tipo":"factura","proveedor":{"nombre":"","cif":"","telefono":"","email":""},"numero":"","fecha":"AAAA-MM-DD","formaPago":"","vencimiento":"","lineas":[{"descripcion":"","cantidad":0,"unidadesPorBulto":1,"precioUnitario":0,"descuento":0,"importe":0,"iva":21,"regalo":false}],"cargos":[{"concepto":"","importe":0,"iva":21}],"impuestos":[{"tipoIva":21,"base":0,"cuota":0}],"total":0,"pagos":[{"forma":"","importe":0}]}
 Reglas:
 - "tipo": "albaran" solo si es un albarán por el que llegará una factura aparte. Si es factura o "albarán-factura" (ALB-FACT), pon "factura".
 - El proveedor es la empresa que emite el documento, nunca Sweet Dreams.
@@ -670,6 +684,7 @@ Reglas:
 - "cargos": importes que se suman a la base fuera de los productos (GTR, GST, punto verde total, portes, envases) solo si NO están ya dentro del importe de algún producto. La suma de los importes de las líneas más los cargos debe dar la base imponible total del documento.
 - "impuestos": las bases y cuotas de IVA tal como vienen impresas. "total": el total final a pagar.
 - "formaPago": copia lo que diga (contado, giro, recibo bancario, transferencia…). "vencimiento" en AAAA-MM-DD si aparece; si dice "X días fecha factura", súmalos a la fecha.
+- "pagos": si el documento dice cómo se pagó y con qué importes (por ejemplo «Metálico 16,24» y «Tarjeta 265,00»), pon cada forma de pago con su importe. Si no lo dice, déjalo vacío.
 - Ignora productos en depósito, envases entregados o retirados y material prestado.
 - Si un dato no aparece o no se lee bien, déjalo vacío o en 0. No inventes nada.`;
 
@@ -791,6 +806,18 @@ function aplicarLectura(d) {
   const fp = String(d.formaPago || "").toLowerCase();
   const conocido = buscarProveedor(b.proveedorNombre, b.cif);
   if (conocido) b.proveedorNombre = conocido.nombre;
+  // Pagos con importe (p. ej. parte en metálico y parte con tarjeta)
+  if (!b.formaPago && Array.isArray(d.pagos)) {
+    let efectivo = 0, otros = 0;
+    d.pagos.forEach((x) => {
+      const imp = cent(x.importe) || 0;
+      if (!imp) return;
+      if (/metal|efectivo|contado|cash/i.test(String(x.forma || ""))) efectivo += imp; else otros += imp;
+    });
+    if (efectivo && otros) { b.formaPago = "mixto"; b.efectivoMixto = centimosATexto(efectivo); }
+    else if (efectivo) b.formaPago = "cajaRoja";
+    else if (otros) b.formaPago = "banco";
+  }
   if (!b.formaPago) {
     if (b.tipo === "albaran") b.formaPago = "conFactura";
     else if (/contado|efectivo|metálico|metalico/.test(fp)) b.formaPago = "cajaRoja";
@@ -819,7 +846,10 @@ async function guardarFactura(cont) {
 
   if (b.totalFactura !== null && t.bases.length && Math.abs(b.totalFactura - t.total) > 5 &&
       !confirm("Los importes no cuadran con el total del documento. ¿Guardar de todas formas?")) return;
-  if (b.formaPago === "cajaRoja" && total >= LIMITE_EFECTIVO &&
+  const efectivoMixto = cent(b.efectivoMixto) || 0;
+  if (b.formaPago === "mixto" && (efectivoMixto <= 0 || efectivoMixto >= total)) return mostrar("En el pago mixto, escribe cuánto se pagó en efectivo (menos que el total).", "mal");
+  const efectivoTotal = b.formaPago === "cajaRoja" ? total : b.formaPago === "mixto" ? efectivoMixto : 0;
+  if (efectivoTotal >= LIMITE_EFECTIVO &&
       !confirm("Es un pago en efectivo de 1.000 € o más, y entre empresas no está permitido. ¿Seguro que quieres guardarlo así?")) return;
 
   if (u.socio) {
@@ -876,6 +906,9 @@ async function guardarFactura(cont) {
   } else {
     estadoPago = "pagada"; pagadaDesde = b.formaPago; fechaPago = hoy(); pagado = true;
   }
+  // Cuánto sale de la caja roja y cuánto por banco o tarjeta
+  const efectivoCajaRoja = pagadaDesde === "cajaRoja" ? total : pagadaDesde === "mixto" ? efectivoMixto : 0;
+  const pagoBanco = pagadaDesde === "banco" ? total : pagadaDesde === "mixto" ? total - efectivoMixto : 0;
 
   lote.set(refFactura, {
     tipo: b.tipo,
@@ -897,6 +930,8 @@ async function guardarFactura(cont) {
     total,
     estado: estadoPago,
     pagadaDesde,
+    efectivoCajaRoja,
+    pagoBanco,
     fechaPago,
     pagoEn: pagado ? serverTimestamp() : null,
     pagoPor: pagado ? u.nombre : null,
@@ -922,7 +957,8 @@ async function guardarFactura(cont) {
     const resumen = { ...b, total, estadoPago };
     borrador = borradorVacio();
     const textoPago = {
-      pagada: pagadaDesde === "albaran" ? "Pagada con el albarán" : pagadaDesde === "cajaRoja" ? "Efectivo, caja roja" : "Pagada por banco",
+      pagada: pagadaDesde === "albaran" ? "Pagada con el albarán" : pagadaDesde === "cajaRoja" ? "Efectivo, caja roja"
+        : pagadaDesde === "mixto" ? `${eur(efectivoCajaRoja)} caja roja + ${eur(pagoBanco)} tarjeta o banco` : "Pagada por banco",
       pendiente: "Pendiente de pago",
       esperaFactura: "Se pagará con la factura"
     }[estadoPago];
@@ -1065,7 +1101,7 @@ async function pintarDetalleFactura(cont, id) {
   }).join("") || '<div><span class="suave">Sin detalle de productos</span></div>';
   const cargos = (f.cargos || []).map((c) => `<div><span>${esc(c.concepto)}<small>IVA ${c.iva} %</small></span><strong>${eur(c.importe)}</strong></div>`).join("");
   const bases = (f.bases || []).map((b) => `<div><span>Base al ${b.tipoIva} % / IVA</span><strong>${eur(b.base)} / ${eur(b.cuota)}</strong></div>`).join("");
-  const desde = { cajaRoja: "Efectivo, caja roja", banco: "Banco o tarjeta", albaran: "Pagada con el albarán" };
+  const desde = { cajaRoja: "Efectivo, caja roja", banco: "Banco o tarjeta", albaran: "Pagada con el albarán", mixto: "Pago mixto" };
 
   cont.innerHTML = `
     <a class="volver" href="#/compras/facturas">‹ Facturas</a>
@@ -1091,6 +1127,7 @@ async function pintarDetalleFactura(cont, id) {
     <div class="panel"><h2>Pago</h2><div class="resumen">
       ${f.estado === "pagada"
         ? `<div><span>Pagada</span><strong>${esc(desde[f.pagadaDesde] || f.pagadaDesde || "")}</strong></div>
+           ${f.pagadaDesde === "mixto" ? `<div><span>Efectivo de la caja roja</span><strong>${eur(f.efectivoCajaRoja || 0)}</strong></div><div><span>Tarjeta o banco</span><strong>${eur(f.pagoBanco || 0)}</strong></div>` : ""}
            <div><span>Fecha de pago</span><strong>${esc(fechaCorta(f.fechaPago))}${f.pagoPor ? " (" + esc(f.pagoPor) + ")" : ""}</strong></div>`
         : f.estado === "esperaFactura"
           ? `<div><span>Estado</span><strong>Se paga con su factura</strong></div>`
@@ -1175,6 +1212,8 @@ async function pintarDetalleFactura(cont, id) {
       try {
         await updateDoc(doc(db, "facturas", id), {
           estado: "pagada", pagadaDesde: desdeSel, fechaPago: fecha,
+          efectivoCajaRoja: desdeSel === "cajaRoja" ? f.total : 0,
+          pagoBanco: desdeSel === "banco" ? f.total : 0,
           pagoEn: serverTimestamp(), pagoPor: estado.usuario.nombre
         });
         await pintarDetalleFactura(cont, id);
