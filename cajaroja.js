@@ -79,11 +79,12 @@ const eurCorto = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + Math.round(Math.abs
 // LÍNEA DE TIEMPO: todos los movimientos en orden, con su saldo
 // =============================================================
 async function cargarLinea() {
-  const [sm, sc, sk, sf] = await Promise.all([
+  const [sm, sc, sk, sf, sfEf] = await Promise.all([
     getDocs(collection(db, "cajaRoja")),
     getDocs(collection(db, "cierres")),
     getDocs(collection(db, "correcciones")),
-    getDocs(query(collection(db, "facturas"), where("pagadaDesde", "==", "cajaRoja")))
+    getDocs(query(collection(db, "facturas"), where("pagadaDesde", "==", "cajaRoja"))),
+    getDocs(query(collection(db, "facturas"), where("efectivoCajaRoja", ">", 0)))
   ]);
 
   const corr = {};
@@ -110,11 +111,18 @@ async function cargarLinea() {
     const v = vigentes(c, corr[d.id]);
     eventos.push({ tipo: "cierre", id: d.id, cuando: ms(c.creadoEn), importe: v.aRetirar, texto: "Cierre del " + fechaCorta(c.fecha), quien: c.autorNombre });
   });
-  sf.forEach((d) => {
+    // Facturas pagadas con la caja roja: entera o solo la parte en efectivo (pago mixto)
+  const vistas = new Set();
+  const anadirFactura = (d) => {
+    if (vistas.has(d.id)) return;
+    vistas.add(d.id);
     const f = d.data();
     if (f.anulada) return;
-    eventos.push({ tipo: "factura", id: d.id, cuando: ms(f.pagoEn), importe: -f.total, texto: "Factura " + f.proveedorNombre + " " + f.numero, quien: f.pagoPor || f.autorNombre });
-  });
+    const importe = typeof f.efectivoCajaRoja === "number" && f.efectivoCajaRoja > 0 ? f.efectivoCajaRoja : f.total;
+    eventos.push({ tipo: "factura", id: d.id, cuando: ms(f.pagoEn), importe: -importe, texto: "Factura " + f.proveedorNombre + " " + f.numero + (f.pagadaDesde === "mixto" ? " (parte en efectivo)" : ""), quien: f.pagoPor || f.autorNombre });
+  };
+  sfEf.forEach(anadirFactura);
+  sf.forEach(anadirFactura);
   eventos.sort((a, b) => a.cuando - b.cuando);
 
   // Recorrido: el saldo se conoce a partir del primer recuento; cada recuento lo fija de nuevo
