@@ -245,7 +245,8 @@ async function pintarResumen(cont, claveParam) {
       </div>
       <a class="boton sec no-imprimir" href="#/trimestral/alquiler">Ver o apuntar alquiler</a>
     </div>
-
+    
+    <div id="tCaja2"></div>
     <div class="panel no-imprimir">
       <h2>Mandar a la gestoría</h2>
       <button id="tCompartir" type="button">Compartir los archivos (Excel)</button>
@@ -264,6 +265,7 @@ async function pintarResumen(cont, claveParam) {
   });
   $("tPdf").addEventListener("click", () => { location.hash = `#/trimestral/imprimir/${clave}`; });
   $("tCompartir").addEventListener("click", () => compartirArchivos(clave, d, r));
+  pintarCaja2Trimestre(d.L);
 }
 
 // ---------- Exportación (CSV para Excel) ----------
@@ -471,4 +473,32 @@ function activarAnular(cont, coleccion, repintar) {
       mostrar("Anulado.", "ok");
     } catch (e) { mostrar("No se ha podido anular: " + traducirError(e.code || e.message), "mal"); }
   }));
+}
+
+// ---------- Caja 2: se ve en el resumen, pero no suma en el 303 de Sweet Dreams ----------
+async function pintarCaja2Trimestre(L) {
+  const caja = document.getElementById("tCaja2");
+  if (!caja) return;
+  try {
+    const [s, sa] = await Promise.all([
+      getDocs(query(collection(db, "cierresCaja2"), where("fecha", ">=", L.desde), where("fecha", "<=", L.hasta))),
+      getDoc(doc(db, "ajustes", "caja2"))
+    ]);
+    let venta = 0, retirado = 0, n = 0;
+    s.forEach((d) => { const c = d.data(); if (c.anulado) return; venta += c.venta; retirado += c.aRetirar; n++; });
+    if (!n) return;
+    const quien = sa.exists() && sa.data().declaradaPor;
+    caja.innerHTML = `
+      <div class="panel">
+        <h2>Caja 2 (se declara aparte)</h2>
+        <div class="resumen">
+          <div><span>Días con cierre</span><strong>${n}</strong></div>
+          <div><span>Ventas de la caja 2</span><strong>${eur(venta)}</strong></div>
+          <div><span>Llevado a la caja roja</span><strong>${eur(retirado)}</strong></div>
+          <div><span>Se declara en</span><strong>${esc(quien || "Sin indicar")}</strong></div>
+        </div>
+        ${quien ? "" : '<div class="estado mal" style="font-weight:400">Falta indicar dónde se declara (Caja 2 → Historial).</div>'}
+        <small class="nota">No suma en la estimación del 303 de Sweet Dreams porque se declara por otro lado.</small>
+      </div>`;
+  } catch (e) { /* sin datos */ }
 }
