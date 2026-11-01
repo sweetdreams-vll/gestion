@@ -1,7 +1,9 @@
 // =============================================================
-// MÓDULO CIERRE TRIMESTRAL: resumen para la gestoría.
+// MÓDULO CIERRE TRIMESTRAL (versión 2): resumen para la gestoría.
 // Ventas (cierres de caja + otros ingresos), IVA soportado (facturas + alquiler),
 // retenciones del alquiler (modelo 115), estimación del 303 y exportación.
+// «Ventas previas»: totales de días anteriores a usar la app (caja 1 y caja 2),
+// que cuentan en el trimestre pero no tocan la caja roja.
 // La gestoría es quien valida y presenta los modelos.
 // =============================================================
 import {
@@ -26,13 +28,15 @@ export const moduloTrimestral = {
   roles: ["socio"],
   pestanas: [
     { id: "resumen", titulo: "Resumen" },
-    { id: "ingresos", titulo: "Otros ingresos" },
+    { id: "ingresos", titulo: "Ingresos" },
     { id: "alquiler", titulo: "Alquiler" },
+    { id: "previas", titulo: "Ventas previas" },
     { id: "imprimir", oculta: true, padre: "resumen" }
   ],
   render: ({ sub, resto, cont }) => {
     if (sub === "ingresos") return pintarIngresos(cont);
     if (sub === "alquiler") return pintarAlquiler(cont);
+    if (sub === "previas") return pintarPrevias(cont);
     if (sub === "imprimir") return pintarImprimible(cont, resto[0]);
     return pintarResumen(cont, resto[0]);
   }
@@ -88,13 +92,14 @@ const baseDe = (total, tipo) => Math.round(total / (1 + tipo / 100));
 // ---------- Datos del trimestre ----------
 async function cargarTrimestre(clave) {
   const L = limites(clave);
-  const [sc, sk, sf, si, sa, sajustes] = await Promise.all([
+  const [sc, sk, sf, si, sa, sajustes, sv] = await Promise.all([
     getDocs(query(collection(db, "cierres"), where("fecha", ">=", L.desde), where("fecha", "<=", L.hasta))),
     getDocs(collection(db, "correcciones")),
     getDocs(query(collection(db, "facturas"), where("fecha", ">=", L.desde), where("fecha", "<=", L.hasta))),
     getDocs(collection(db, "ingresos")),
     getDocs(collection(db, "alquileres")),
-    getDoc(doc(db, "ajustes", "trimestral"))
+    getDoc(doc(db, "ajustes", "trimestral")),
+    getDocs(collection(db, "ventasPrevias"))
   ]);
   const corr = {};
   sk.forEach((d) => { const c = d.data(); (corr[c.cierreId] ||= []).push(c); });
@@ -107,6 +112,13 @@ async function cargarTrimestre(clave) {
   const facturas = [];
   sf.forEach((d) => facturas.push({ id: d.id, ...d.data() }));
   facturas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // Si una factura no trae CIF, se usa el del proveedor
+  try {
+    const sp = await getDocs(collection(db, "proveedores"));
+    const cifProv = {};
+    sp.forEach((x) => { cifProv[x.id] = x.data().cif || ""; });
+    facturas.forEach((f) => { if (!f.cif) f.cif = cifProv[f.proveedorId] || ""; });
+  } catch (e) { /* sin proveedores */ }
 
   const ingresos = [];
   si.forEach((d) => { const x = { id: d.id, ...d.data() }; if (x.fecha >= L.desde && x.fecha <= L.hasta) ingresos.push(x); });
@@ -117,14 +129,21 @@ async function cargarTrimestre(clave) {
   alquileres.sort((a, b) => a.mes.localeCompare(b.mes));
 
   const compensar = (sajustes.exists() && sajustes.data().compensar && sajustes.data().compensar[clave]) || 0;
-  return { L, cierres, facturas, ingresos, alquileres, compensar };
+  const previas = [];
+  sv.forEach((x) => { const v = { id: x.id, ...x.data() }; if (!v.anulado && v.desde >= L.desde && v.desde <= L.hasta) previas.push(v); });
+  previas.sort((a, b) => a.desde.localeCompare(b.desde));
+  return { L, cierres, facturas, ingresos, alquileres, compensar, previas };
 }
 
 function calcular(d) {
   // Ventas en barra (cierres): total con IVA al 10 %
-  const ventasTotal = d.cierres.reduce((s, c) => s + c.v.ticketTotal, 0);
-  const ventasEfectivo = d.cierres.reduce((s, c) => s + c.v.ticketEfectivo, 0);
-  const ventasTarjeta = d.cierres.reduce((s, c) => s + c.v.ticketTarjeta, 0);
+  // más las ventas previas de la caja 1 cargadas a mano (días antes de usar la app)
+  const previas1 = d.previas.filter((v) => v.caja === 1);
+  const previasEfectivo = previas1.reduce((s, v) => s + v.efectivo, 0);
+  const previasTarjeta = previas1.reduce((s, v) => s + v.tarjeta, 0);
+  const ventasEfectivo = d.cierres.reduce((s, c) => s + c.v.ticketEfectivo, 0) + previasEfectivo;
+  const ventasTarjeta = d.cierres.reduce((s, c) => s + c.v.ticketTarjeta, 0) + previasTarjeta;
+  const ventasTotal = ventasEfectivo + ventasTarjeta;
   const ventasBase = baseDe(ventasTotal, IVA_VENTAS);
   const ventasCuota = ventasTotal - ventasBase;
 
@@ -153,6 +172,7 @@ function calcular(d) {
   // Avisos
   const avisos = [];
   const fechasCierre = new Set(d.cierres.map((c) => c.fecha));
+  previas1.forEach((v) => { for (let f = new Date(v.desde + "T12:00:00"); iso(f) <= v.hasta; f.setDate(f.getDate() + 1)) fechasCierre.add(iso(f)); });
   const hoy = iso(new Date());
   const faltan = [];
   for (let f = new Date(d.L.desde + "T12:00:00"); iso(f) <= d.L.hasta && iso(f) < hoy; f.setDate(f.getDate() + 1)) {
@@ -166,7 +186,7 @@ function calcular(d) {
   const mesesSinAlq = d.L.meses.filter((m) => m < hoy.slice(0, 7) && !alqOk.some((a) => a.mes === m));
   if (mesesSinAlq.length) avisos.push(`Falta registrar el alquiler de ${mesesSinAlq.map(nombreMes).join(", ")}.`);
 
-  return { ventasTotal, ventasEfectivo, ventasTarjeta, ventasBase, ventasCuota, ingBase, ingCuota, porTipo, soportadoBase, soportadoCuota, devengado, resultado, alqBase, alqRet, avisos, fiscales, alqOk, ingresosOk, diasCierre: d.cierres.length };
+  return { ventasTotal, ventasEfectivo, ventasTarjeta, ventasBase, ventasCuota, ingBase, ingCuota, porTipo, soportadoBase, soportadoCuota, devengado, resultado, alqBase, alqRet, avisos, fiscales, alqOk, ingresosOk, diasCierre: d.cierres.length, previas1, previasTotal: previasEfectivo + previasTarjeta };
 }
 
 // ---------- Resumen ----------
@@ -194,6 +214,7 @@ async function pintarResumen(cont, claveParam) {
       <h2>Ventas en barra (cierres de caja)</h2>
       <div class="resumen">
         <div><span>Días con cierre</span><strong>${r.diasCierre}</strong></div>
+        ${r.previas1.length ? `<div><span>Ventas previas cargadas a mano (${r.previas1.length})</span><strong>${eur(r.previasTotal)}</strong></div>` : ""}
         <div><span>Efectivo</span><strong>${eur(r.ventasEfectivo)}</strong></div>
         <div><span>Tarjeta</span><strong>${eur(r.ventasTarjeta)}</strong></div>
         <div><span>Total vendido (IVA incluido)</span><strong>${eur(r.ventasTotal)}</strong></div>
@@ -245,8 +266,9 @@ async function pintarResumen(cont, claveParam) {
       </div>
       <a class="boton sec no-imprimir" href="#/trimestral/alquiler">Ver o apuntar alquiler</a>
     </div>
-    
+
     <div id="tCaja2"></div>
+
     <div class="panel no-imprimir">
       <h2>Mandar a la gestoría</h2>
       <button id="tCompartir" type="button">Compartir los archivos (Excel)</button>
@@ -291,6 +313,7 @@ async function compartirArchivos(clave, d, r) {
 
   const ventas = [["Fecha", "Efectivo", "Tarjeta", "Total (IVA incl.)", "Base 10%", "IVA 10%", "Gastos pagados de caja", "Hecho por"]];
   d.cierres.forEach((c) => { const base = baseDe(c.v.ticketTotal, IVA_VENTAS); ventas.push([fechaCorta(c.fecha), num2(c.v.ticketEfectivo), num2(c.v.ticketTarjeta), num2(c.v.ticketTotal), num2(base), num2(c.v.ticketTotal - base), num2(c.v.totalGastos), c.autorNombre || ""]); });
+  r.previas1.forEach((v) => { const t = v.efectivo + v.tarjeta, base = baseDe(t, IVA_VENTAS); ventas.push([`${fechaCorta(v.desde)}${v.hasta !== v.desde ? " a " + fechaCorta(v.hasta) : ""} (cargado a mano)`, num2(v.efectivo), num2(v.tarjeta), num2(t), num2(base), num2(t - base), num2(v.gastos || 0), v.autorNombre || ""]); });
   ventas.push(["TOTAL", num2(r.ventasEfectivo), num2(r.ventasTarjeta), num2(r.ventasTotal), num2(r.ventasBase), num2(r.ventasCuota), "", ""]);
 
   const ingresos = [["Fecha", "Concepto", "Base", "IVA %", "IVA", "Total"]];
@@ -480,19 +503,23 @@ async function pintarCaja2Trimestre(L) {
   const caja = document.getElementById("tCaja2");
   if (!caja) return;
   try {
-    const [s, sa] = await Promise.all([
+    const [s, sa, sv] = await Promise.all([
       getDocs(query(collection(db, "cierresCaja2"), where("fecha", ">=", L.desde), where("fecha", "<=", L.hasta))),
-      getDoc(doc(db, "ajustes", "caja2"))
+      getDoc(doc(db, "ajustes", "caja2")),
+      getDocs(collection(db, "ventasPrevias"))
     ]);
-    let venta = 0, retirado = 0, n = 0;
+    let venta = 0, retirado = 0, n = 0, previas = 0;
     s.forEach((d) => { const c = d.data(); if (c.anulado) return; venta += c.venta; retirado += c.aRetirar; n++; });
-    if (!n) return;
+    sv.forEach((d) => { const v = d.data(); if (!v.anulado && v.caja === 2 && v.desde >= L.desde && v.desde <= L.hasta) previas += v.efectivo; });
+    venta += previas;
+    if (!n && !previas) return;
     const quien = sa.exists() && sa.data().declaradaPor;
     caja.innerHTML = `
       <div class="panel">
         <h2>Caja 2 (se declara aparte)</h2>
         <div class="resumen">
           <div><span>Días con cierre</span><strong>${n}</strong></div>
+          ${previas ? `<div><span>Ventas previas cargadas a mano</span><strong>${eur(previas)}</strong></div>` : ""}
           <div><span>Ventas de la caja 2</span><strong>${eur(venta)}</strong></div>
           <div><span>Llevado a la caja roja</span><strong>${eur(retirado)}</strong></div>
           <div><span>Se declara en</span><strong>${esc(quien || "Sin indicar")}</strong></div>
@@ -501,4 +528,87 @@ async function pintarCaja2Trimestre(L) {
         <small class="nota">No suma en la estimación del 303 de Sweet Dreams porque se declara por otro lado.</small>
       </div>`;
   } catch (e) { /* sin datos */ }
+}
+
+// =============================================================
+// VENTAS PREVIAS: días anteriores a usar la app (caja 1 y caja 2)
+// Cuentan en el trimestre, pero no en la caja roja (ese dinero ya se contó o se gastó).
+// =============================================================
+async function pintarPrevias(cont) {
+  cont.innerHTML = '<p class="suave">Cargando…</p>';
+  const s = await getDocs(collection(db, "ventasPrevias"));
+  const lista = [];
+  s.forEach((d) => lista.push({ id: d.id, ...d.data() }));
+  lista.sort((a, b) => b.desde.localeCompare(a.desde) || a.caja - b.caja);
+
+  cont.innerHTML = `
+    <div class="panel">
+      <h2>Cargar ventas de días anteriores</h2>
+      <p class="suave" style="margin-top:0;line-height:1.5">Para los días antes de empezar a usar la app. Puedes cargar un día con su ticket o el total de varios días seguidos. Cuenta en el trimestre, pero no en la caja roja.</p>
+      <label for="pCaja">Caja</label>
+      <select id="pCaja"><option value="1">Caja 1 (registradora con ticket)</option><option value="2">Caja 2 (se declara aparte)</option></select>
+      <div class="fila">
+        <div><label for="pDesde">Desde</label><input id="pDesde" type="date"></div>
+        <div><label for="pHasta">Hasta (incluido)</label><input id="pHasta" type="date"></div>
+      </div>
+      <div class="fila">
+        <div><label for="pEfectivo" id="pEtiEfectivo">Efectivo (€)</label><input id="pEfectivo" inputmode="decimal" placeholder="0,00"></div>
+        <div id="pCajaTarjeta"><label for="pTarjeta">Tarjeta (€)</label><input id="pTarjeta" inputmode="decimal" placeholder="0,00"></div>
+      </div>
+      <label for="pGastos">Gastos pagados con la caja (€, opcional)</label><input id="pGastos" inputmode="decimal" placeholder="0,00">
+      <label for="pNota">Nota (opcional)</label><input id="pNota" placeholder="Tickets Z de la semana del 6 al 12">
+      <small class="nota" id="pTotal"></small>
+      <button id="pGuardar" type="button">Guardar</button>
+    </div>
+    <div class="semana"><h3>Cargadas</h3>
+      ${lista.length ? lista.map((v) => `
+        <div class="item" style="${v.anulado ? "opacity:.5" : ""}">
+          <div class="top"><span>Caja ${v.caja} · ${esc(fechaCorta(v.desde))}${v.hasta !== v.desde ? " a " + esc(fechaCorta(v.hasta)) : ""}${v.anulado ? '<span class="badge anulada">anulado</span>' : ""}</span><span>${eur(v.efectivo + (v.tarjeta || 0))}</span></div>
+          <div class="sub"><span>${v.caja === 1 ? `Efectivo ${eur(v.efectivo)} · tarjeta ${eur(v.tarjeta || 0)}` : "Venta " + eur(v.efectivo)}${v.gastos ? " · gastos " + eur(v.gastos) : ""}${v.nota ? " · " + esc(v.nota) : ""}</span>
+            ${v.anulado ? "" : `<button class="sec iAnular" data-id="${esc(v.id)}" type="button" style="width:auto;margin:0;padding:4px 10px;font-size:.8rem">Anular</button>`}</div>
+        </div>`).join("") : '<p class="suave">Todavía no hay ventas previas cargadas.</p>'}
+    </div>`;
+
+  const actualizar = () => {
+    const caja2 = $("pCaja").value === "2";
+    $("pCajaTarjeta").classList.toggle("oculto", caja2);
+    $("pEtiEfectivo").textContent = caja2 ? "Venta (€)" : "Efectivo (€)";
+    if (!$("pHasta").value && $("pDesde").value) $("pHasta").value = $("pDesde").value;
+    const ef = leerEur($("pEfectivo").value) || 0, tj = caja2 ? 0 : (leerEur($("pTarjeta").value) || 0);
+    $("pTotal").textContent = ef + tj ? "Total vendido: " + eur(ef + tj) : "";
+  };
+  cont.querySelector(".panel").addEventListener("input", actualizar);
+  cont.querySelector(".panel").addEventListener("change", actualizar);
+
+  $("pGuardar").addEventListener("click", async () => {
+    const caja = Number($("pCaja").value);
+    const desde = $("pDesde").value, hasta = $("pHasta").value || desde;
+    const efectivo = leerEur($("pEfectivo").value) || 0;
+    const tarjeta = caja === 1 ? (leerEur($("pTarjeta").value) || 0) : 0;
+    const gastos = leerEur($("pGastos").value) || 0;
+    if (!desde) return mostrar("Falta la fecha.", "mal");
+    if (hasta < desde) return mostrar("La fecha «hasta» no puede ser anterior a «desde».", "mal");
+    if (trimestreDe(desde) !== trimestreDe(hasta)) return mostrar("Carga cada trimestre por separado: «desde» y «hasta» tienen que ser del mismo trimestre.", "mal");
+    if ([efectivo, tarjeta, gastos].some((x) => isNaN(x) || x < 0) || efectivo + tarjeta <= 0) return mostrar("Revisa los importes.", "mal");
+    // No se puede solapar con días que ya tienen cierre en la app ni con otras cargas de la misma caja
+    try {
+      const col = caja === 1 ? "cierres" : "cierresCaja2";
+      const sc = await getDocs(query(collection(db, col), where("fecha", ">=", desde), where("fecha", "<=", hasta)));
+      const dias = [];
+      sc.forEach((d) => { if (!d.data().anulado) dias.push(fechaCorta(d.data().fecha)); });
+      if (dias.length) return mostrar(`Esos días ya tienen cierre en la app (${dias.join(", ")}). Carga solo los días anteriores, para no contarlos dos veces.`, "mal");
+    } catch (e) { /* seguimos */ }
+    const solapa = lista.find((v) => !v.anulado && v.caja === caja && v.desde <= hasta && v.hasta >= desde);
+    if (solapa) return mostrar(`Se solapa con otra carga de la caja ${caja} (${fechaCorta(solapa.desde)} a ${fechaCorta(solapa.hasta)}).`, "mal");
+    if (!confirm(`¿Guardar ventas de la caja ${caja} del ${fechaCorta(desde)}${hasta !== desde ? " al " + fechaCorta(hasta) : ""} por ${eur(efectivo + tarjeta)}?`)) return;
+    try {
+      await setDoc(doc(collection(db, "ventasPrevias")), {
+        caja, desde, hasta, efectivo, tarjeta, gastos, nota: $("pNota").value.trim(), anulado: false,
+        autorUid: estado.usuario.uid, autorNombre: estado.usuario.nombre, creadoEn: serverTimestamp()
+      });
+      await pintarPrevias(cont);
+      mostrar("Guardado.", "ok");
+    } catch (e) { mostrar("No se ha podido guardar: " + traducirError(e.code || e.message), "mal"); }
+  });
+  activarAnular(cont, "ventasPrevias", () => pintarPrevias(cont));
 }
