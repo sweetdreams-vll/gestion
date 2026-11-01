@@ -79,12 +79,13 @@ const eurCorto = (c) => (c > 0 ? "+" : c < 0 ? "−" : "") + Math.round(Math.abs
 // LÍNEA DE TIEMPO: todos los movimientos en orden, con su saldo
 // =============================================================
 async function cargarLinea() {
-  const [sm, sc, sk, sf, sfEf] = await Promise.all([
+  const [sm, sc, sk, sf, sfEf, sc2] = await Promise.all([
     getDocs(collection(db, "cajaRoja")),
     getDocs(collection(db, "cierres")),
     getDocs(collection(db, "correcciones")),
     getDocs(query(collection(db, "facturas"), where("pagadaDesde", "==", "cajaRoja"))),
-    getDocs(query(collection(db, "facturas"), where("efectivoCajaRoja", ">", 0)))
+    getDocs(query(collection(db, "facturas"), where("efectivoCajaRoja", ">", 0))),
+    getDocs(collection(db, "cierresCaja2"))
   ]);
 
   const corr = {};
