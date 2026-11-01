@@ -904,7 +904,7 @@ async function guardarFactura(cont) {
   } else if (b.formaPago === "pendiente") {
     estadoPago = "pendiente";
   } else {
-    estadoPago = "pagada"; pagadaDesde = b.formaPago; fechaPago = hoy(); pagado = true;
+    estadoPago = "pagada"; pagadaDesde = b.formaPago; fechaPago = b.fecha < hoy() ? b.fecha : hoy(); pagado = true;
   }
   // Cuánto sale de la caja roja y cuánto por banco o tarjeta
   const efectivoCajaRoja = pagadaDesde === "cajaRoja" ? total : pagadaDesde === "mixto" ? efectivoMixto : 0;
