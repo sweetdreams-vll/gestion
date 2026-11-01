@@ -18,15 +18,16 @@ import { moduloCaja } from "./caja.js?v=4";
 import { moduloStock } from "./stock.js?v=2";
 import { moduloCompras } from "./compras.js?v=6";
 import { moduloCajaRoja } from "./cajaroja.js?v=8";
+import { moduloTrimestral } from "./trimestral.js?v=1";
 
 // ---------- Módulos ----------
 // Para añadir un módulo nuevo: importarlo arriba y añadirlo a esta lista.
 // enBarra: true = aparece en la barra inferior; false = aparece en «Más».
-const MODULOS = [moduloCaja, moduloCompras, moduloStock, moduloCajaRoja];
+const MODULOS = [moduloCaja, moduloCompras, moduloStock, moduloCajaRoja, moduloTrimestral];
 
 const PROXIMAMENTE = [
   "Carta y escandallos", "Personal",
-  "Cierre trimestral", "Panel de control", "Obligaciones del local"
+    "Panel de control", "Obligaciones del local"
 ];
 
 function puedeVer(roles) { return !roles || roles.includes(estado.usuario.rol); }
