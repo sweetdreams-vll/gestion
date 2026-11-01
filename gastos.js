@@ -282,6 +282,11 @@ async function cargarInforme(clave) {
   sk.forEach((d) => { const c = d.data(); (corr[c.cierreId] ||= []).push(c); });
   let ventas = 0;
   sc.forEach((d) => { ventas += vigentes(d.data(), corr[d.id]).ticketTotal; });
+  // Ventas previas de la caja 1 cargadas a mano (días anteriores a usar la app)
+  try {
+    const sv = await getDocs(collection(db, "ventasPrevias"));
+    sv.forEach((d) => { const v = d.data(); if (!v.anulado && v.caja === 1 && v.desde >= L.desde && v.desde <= L.hasta) ventas += v.efectivo + v.tarjeta; });
+  } catch (e) { /* sin datos */ }
   const ventasBase = baseDe(ventas, 10);
 
   const tipoProv = {};
