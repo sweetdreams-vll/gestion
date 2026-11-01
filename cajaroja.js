@@ -126,7 +126,7 @@ async function cargarLinea() {
     const f = d.data();
     if (f.anulada) return;
     const importe = typeof f.efectivoCajaRoja === "number" && f.efectivoCajaRoja > 0 ? f.efectivoCajaRoja : f.total;
-    eventos.push({ tipo: "factura", id: d.id, cuando: ms(f.pagoEn), importe: -importe, texto: "Factura " + f.proveedorNombre + " " + f.numero + (f.pagadaDesde === "mixto" ? " (parte en efectivo)" : ""), quien: f.pagoPor || f.autorNombre });
+    eventos.push({ tipo: "factura", id: d.id, cuando: f.fechaPago && f.fechaPago < iso(new Date(ms(f.pagoEn))) ? new Date(f.fechaPago + "T23:59:00").getTime() : ms(f.pagoEn), importe: -importe, texto: "Factura " + f.proveedorNombre + " " + f.numero + (f.pagadaDesde === "mixto" ? " (parte en efectivo)" : ""), quien: f.pagoPor || f.autorNombre });
   };
   sfEf.forEach(anadirFactura);
   sf.forEach(anadirFactura);
