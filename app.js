@@ -17,10 +17,10 @@ import {
 import { moduloCaja } from "./caja.js?v=4";
 import { moduloCaja2 } from "./caja2.js?v=1";
 import { moduloStock } from "./stock.js?v=2";
-import { moduloCompras } from "./compras.js?v=6";
-import { moduloCajaRoja } from "./cajaroja.js?v=9";
-import { moduloTrimestral } from "./trimestral.js?v=3";
-import { moduloGastos } from "./gastos.js?v=1";
+import { moduloCompras } from "./compras.js?v=7";
+import { moduloCajaRoja } from "./cajaroja.js?v=10";
+import { moduloTrimestral } from "./trimestral.js?v=4";
+import { moduloGastos } from "./gastos.js?v=3";
 
 // ---------- Módulos ----------
 // Para añadir un módulo nuevo: importarlo arriba y añadirlo a esta lista.
