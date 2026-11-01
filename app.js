@@ -19,11 +19,12 @@ import { moduloStock } from "./stock.js?v=2";
 import { moduloCompras } from "./compras.js?v=6";
 import { moduloCajaRoja } from "./cajaroja.js?v=8";
 import { moduloTrimestral } from "./trimestral.js?v=1";
+import { moduloGastos } from "./gastos.js?v=1";
 
 // ---------- Módulos ----------
 // Para añadir un módulo nuevo: importarlo arriba y añadirlo a esta lista.
 // enBarra: true = aparece en la barra inferior; false = aparece en «Más».
-const MODULOS = [moduloCaja, moduloCompras, moduloStock, moduloCajaRoja, moduloTrimestral];
+const MODULOS = [moduloCaja, moduloCompras, moduloStock, moduloCajaRoja, moduloTrimestral, moduloGastos];
 
 const PROXIMAMENTE = [
   "Carta y escandallos", "Personal",
