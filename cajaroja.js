@@ -112,6 +112,12 @@ async function cargarLinea() {
     const v = vigentes(c, corr[d.id]);
     eventos.push({ tipo: "cierre", id: d.id, cuando: ms(c.creadoEn), importe: v.aRetirar, texto: "Cierre del " + fechaCorta(c.fecha), quien: c.autorNombre });
   });
+  // Caja 2: lo retirado de cada cierre también entra en la caja roja
+  sc2.forEach((d) => {
+    const c = d.data();
+    if (c.anulado) return;
+    eventos.push({ tipo: "cierre", id: d.id, cuando: ms(c.creadoEn), importe: c.aRetirar, texto: "Caja 2 del " + fechaCorta(c.fecha), quien: c.autorNombre });
+  });
     // Facturas pagadas con la caja roja: entera o solo la parte en efectivo (pago mixto)
   const vistas = new Set();
   const anadirFactura = (d) => {
